@@ -1,0 +1,323 @@
+/**
+ * Subscription Model
+ * ──────────────────
+ * Manages a user's active plan, credit balance, VIP add-ons, and billing cycle.
+ *
+ * One subscription per user at a time (1:1 with User).
+ * When a user upgrades, the existing document is updated — not replaced.
+ * Full billing history is tracked in the Payment model.
+ *
+ * Tier behaviour:
+ *
+ *   Standard  — free forever, no credits, batch matching
+ *   Priority  — credit-based (purchased in bundles), instant matching
+ *   VIP       — monthly KES 10,000 subscription, unlimited curated matches,
+ *               add-ons unlocked individually
+ *
+ * Credit system (Priority tier):
+ *   - Credits are stored as `priorityCredits` integer
+ *   - Each instant match attempt atomically decrements by 1
+ *   - If credits = 0, match request is rejected (402)
+ *   - Credits do NOT expire (but subscription tier can expire)
+ *
+ * VIP cycle:
+ *   - Monthly reset: vipMatchesUsedThisCycle resets on vipCycleResetAt
+ *   - A BullMQ cron checks expiry daily and sends renewal reminders
+ *   - After expiry, tier downgrades to Standard automatically
+ */
+
+import mongoose, { Document, Schema, Types } from 'mongoose'
+import {
+  SubscriptionTier,
+  SubscriptionStatus,
+  VipAddOn,
+} from '../types/index.js'
+
+// ─────────────────────────────────────────────
+// INTERFACES
+// ─────────────────────────────────────────────
+
+export interface ISubscriptionHistory {
+  tier:        SubscriptionTier
+  action:      'upgraded' | 'downgraded' | 'cancelled' | 'renewed' | 'expired'
+  from:        SubscriptionTier
+  to:          SubscriptionTier
+  paymentId?:  Types.ObjectId
+  changedAt:   Date
+  note?:       string
+}
+
+export interface ISubscription extends Document {
+  _id:    Types.ObjectId
+  userId: Types.ObjectId        // ref: User, unique (1:1)
+
+  tier:   SubscriptionTier
+  status: SubscriptionStatus
+
+  // ── Standard ──────────────────────────────
+  // No extra fields — standard is always active, no expiry
+
+  // ── Priority fields ───────────────────────
+  priorityCredits:     number   // current credit balance
+  totalCreditsPurchased: number // lifetime total (for analytics)
+  totalCreditsUsed:    number   // lifetime total
+
+  // ── VIP fields ────────────────────────────
+  vipMonthlyMatchLimit:     number   // configurable, default 30
+  vipMatchesUsedThisCycle:  number   // resets monthly
+  vipCycleStartedAt?:       Date     // when current cycle began
+  vipCycleResetAt?:         Date     // when cycle counter resets
+  vipAddOns:                VipAddOn[] // active add-on keys
+
+  // ── Billing ───────────────────────────────
+  currentPeriodStart?:  Date
+  currentPeriodEnd?:    Date       // for VIP: subscription end date
+  autoRenew:            boolean
+  lastPaymentId?:       Types.ObjectId
+  lastPaymentAt?:       Date
+  nextBillingAt?:       Date
+
+  // ── Downgrade scheduling ──────────────────
+  cancelAtPeriodEnd:    boolean    // if true, downgrade to Standard on expiry
+  scheduledTier?:       SubscriptionTier // tier to move to after period ends
+
+  // ── History ───────────────────────────────
+  history: ISubscriptionHistory[]
+
+  createdAt: Date
+  updatedAt: Date
+
+  // ── Instance Methods ──
+  hasCredits(): boolean
+  isVipActive(): boolean
+  canUseAddOn(addOn: VipAddOn): boolean
+  decrementCredit(): Promise<void>
+  resetVipCycle(): void
+}
+
+// ─────────────────────────────────────────────
+// SUB-SCHEMAS
+// ─────────────────────────────────────────────
+
+const subscriptionHistorySchema = new Schema(
+  {
+    tier:      { type: String, enum: Object.values(SubscriptionTier) },
+    action:    {
+      type: String,
+      enum: ['upgraded', 'downgraded', 'cancelled', 'renewed', 'expired'],
+    },
+    from:      { type: String, enum: Object.values(SubscriptionTier) },
+    to:        { type: String, enum: Object.values(SubscriptionTier) },
+    paymentId: { type: Schema.Types.ObjectId, ref: 'Payment' },
+    changedAt: { type: Date, default: Date.now },
+    note:      { type: String },
+  },
+  { _id: false }
+)
+
+// ─────────────────────────────────────────────
+// MAIN SCHEMA
+// ─────────────────────────────────────────────
+
+const subscriptionSchema = new Schema<ISubscription>(
+  {
+    userId: {
+      type:     Schema.Types.ObjectId,
+      ref:      'User',
+      required: true,
+      unique:   true,
+    },
+
+    tier: {
+      type:    String,
+      enum:    Object.values(SubscriptionTier),
+      default: SubscriptionTier.Standard,
+    },
+
+    status: {
+      type:    String,
+      enum:    Object.values(SubscriptionStatus),
+      default: SubscriptionStatus.Active,
+    },
+
+    // ── Priority ─────────────────────────────
+
+    priorityCredits: {
+      type:    Number,
+      default: 0,
+      min:     0,
+    },
+
+    totalCreditsPurchased: {
+      type:    Number,
+      default: 0,
+    },
+
+    totalCreditsUsed: {
+      type:    Number,
+      default: 0,
+    },
+
+    // ── VIP ───────────────────────────────────
+
+    vipMonthlyMatchLimit: {
+      type:    Number,
+      default: 30,
+    },
+
+    vipMatchesUsedThisCycle: {
+      type:    Number,
+      default: 0,
+      min:     0,
+    },
+
+    vipCycleStartedAt: {
+      type: Date,
+    },
+
+    vipCycleResetAt: {
+      type: Date,
+    },
+
+    vipAddOns: {
+      type:    [String],
+      enum:    Object.values(VipAddOn),
+      default: [],
+    },
+
+    // ── Billing ───────────────────────────────
+
+    currentPeriodStart: {
+      type: Date,
+    },
+
+    currentPeriodEnd: {
+      type: Date,
+    },
+
+    autoRenew: {
+      type:    Boolean,
+      default: true,
+    },
+
+    lastPaymentId: {
+      type: Schema.Types.ObjectId,
+      ref:  'Payment',
+    },
+
+    lastPaymentAt: {
+      type: Date,
+    },
+
+    nextBillingAt: {
+      type: Date,
+    },
+
+    // ── Downgrade ─────────────────────────────
+
+    cancelAtPeriodEnd: {
+      type:    Boolean,
+      default: false,
+    },
+
+    scheduledTier: {
+      type: String,
+      enum: Object.values(SubscriptionTier),
+    },
+
+    // ── History ───────────────────────────────
+
+    history: {
+      type:    [subscriptionHistorySchema],
+      default: [],
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+)
+
+// ─────────────────────────────────────────────
+// INDEXES
+// ─────────────────────────────────────────────
+
+subscriptionSchema.index({ userId: 1 }, { unique: true })
+subscriptionSchema.index({ tier: 1, status: 1 })
+subscriptionSchema.index({ currentPeriodEnd: 1 })   // expiry cron queries
+subscriptionSchema.index({ nextBillingAt: 1 })       // renewal cron queries
+
+// ─────────────────────────────────────────────
+// INSTANCE METHODS
+// ─────────────────────────────────────────────
+
+subscriptionSchema.methods.hasCredits = function (): boolean {
+  return this.priorityCredits > 0
+}
+
+subscriptionSchema.methods.isVipActive = function (): boolean {
+  return (
+    this.tier === SubscriptionTier.VIP &&
+    this.status === SubscriptionStatus.Active &&
+    (!this.currentPeriodEnd || this.currentPeriodEnd > new Date())
+  )
+}
+
+subscriptionSchema.methods.canUseAddOn = function (
+  addOn: VipAddOn
+): boolean {
+  return this.isVipActive() && this.vipAddOns.includes(addOn)
+}
+
+subscriptionSchema.methods.decrementCredit = async function (): Promise<void> {
+  if (this.priorityCredits <= 0) {
+    throw new Error('Insufficient priority credits')
+  }
+  this.priorityCredits  -= 1
+  this.totalCreditsUsed += 1
+  await this.save()
+}
+
+subscriptionSchema.methods.resetVipCycle = function (): void {
+  this.vipMatchesUsedThisCycle = 0
+  this.vipCycleStartedAt       = new Date()
+  this.vipCycleResetAt         = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+}
+
+// ─────────────────────────────────────────────
+// PRE-SAVE: AUTO-EXPIRE VIP
+// ─────────────────────────────────────────────
+
+subscriptionSchema.pre('save', function (next) {
+  // Check if VIP has expired
+  if (
+    this.tier === SubscriptionTier.VIP &&
+    this.currentPeriodEnd &&
+    this.currentPeriodEnd < new Date() &&
+    this.status === SubscriptionStatus.Active
+  ) {
+    this.status = SubscriptionStatus.Expired
+
+    if (this.cancelAtPeriodEnd) {
+      this.tier = this.scheduledTier ?? SubscriptionTier.Standard
+      this.history.push({
+        tier:      SubscriptionTier.VIP,
+        action:    'expired',
+        from:      SubscriptionTier.VIP,
+        to:        this.tier,
+        changedAt: new Date(),
+        note:      'Auto-downgraded on period end',
+      })
+    }
+  }
+  next()
+})
+
+// ─────────────────────────────────────────────
+// MODEL
+// ─────────────────────────────────────────────
+
+export const Subscription = mongoose.model<ISubscription>(
+  'Subscription',
+  subscriptionSchema
+)
