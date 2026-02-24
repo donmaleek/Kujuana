@@ -1,0 +1,211 @@
+/**
+ * Atlas Search & MongoDB Index Configurations
+ * ─────────────────────────────────────────────
+ * Run this script once after initial deployment to ensure all indexes
+ * are created. In production, prefer creating Atlas Search indexes
+ * via the Atlas UI or Terraform — this script is for dev/CI bootstrapping.
+ *
+ * Usage:
+ *   npx ts-node src/seeds/createIndexes.ts
+ */
+
+import mongoose from 'mongoose'
+import { connectDB } from '../config/db.js'
+
+// ─────────────────────────────────────────────
+// ATLAS SEARCH INDEX DEFINITION
+// Create this in: Atlas UI → Search → Create Search Index
+// Collection: profiles
+// ─────────────────────────────────────────────
+
+export const PROFILES_SEARCH_INDEX = {
+  name: 'profiles_search',
+  definition: {
+    mappings: {
+      dynamic: false,
+      fields: {
+        // Full-text search fields (for matching text inputs)
+        idealPartnerDescription: {
+          type:     'string',
+          analyzer: 'lucene.english',   // stemming, stop words
+        },
+        lifeVision: {
+          type:     'string',
+          analyzer: 'lucene.english',
+        },
+        occupation: {
+          type:     'string',
+          analyzer: 'lucene.standard',
+        },
+        // Multi-value fields (for faceting and filtering)
+        personalityTraits: {
+          type: 'string',
+        },
+        lifestyle: {
+          type: 'string',
+        },
+        partnerValues: {
+          type: 'string',
+        },
+        // Geo field for $geoNear aggregation stages
+        'location.coordinates': {
+          type: 'geo',
+        },
+        // Numeric fields (for range filters in $search)
+        age: {
+          type:           'number',
+          representation: 'int64',
+        },
+        profileCompleteness: {
+          type:           'number',
+          representation: 'int64',
+        },
+        // Boolean / keyword filters
+        isActive:           { type: 'boolean' },
+        onboardingComplete: { type: 'boolean' },
+        gender: {
+          type:   'string',
+          analyzer: 'lucene.keyword', // exact match
+        },
+        religion: {
+          type:     'string',
+          analyzer: 'lucene.keyword',
+        },
+        relationshipType: {
+          type:     'string',
+          analyzer: 'lucene.keyword',
+        },
+        'location.countryCode': {
+          type:     'string',
+          analyzer: 'lucene.keyword',
+        },
+        'location.country': {
+          type:     'string',
+          analyzer: 'lucene.keyword',
+        },
+      },
+    },
+  },
+}
+
+// ─────────────────────────────────────────────
+// STANDARD MONGODB INDEXES
+// (also defined inline on schemas via .index() calls,
+//  but listed here for documentation and manual creation)
+// ─────────────────────────────────────────────
+
+export const INDEX_DEFINITIONS = {
+
+  users: [
+    { key: { email: 1 },  options: { unique: true, name: 'email_unique' } },
+    { key: { phone: 1 },  options: { unique: true, sparse: true, name: 'phone_unique_sparse' } },
+    { key: { role: 1 },   options: { name: 'role' } },
+    { key: { createdAt: -1 }, options: { name: 'createdAt_desc' } },
+    { key: { isActive: 1, isSuspended: 1 }, options: { name: 'active_not_suspended' } },
+  ],
+
+  profiles: [
+    { key: { userId: 1 }, options: { unique: true, name: 'userId_unique' } },
+    { key: { 'location.coordinates': '2dsphere' }, options: { name: 'location_geo' } },
+    {
+      key:     { isActive: 1, gender: 1, onboardingComplete: 1 },
+      options: { name: 'candidate_pool_compound' },
+    },
+    {
+      key:     { isActive: 1, 'location.countryCode': 1 },
+      options: { name: 'active_by_country' },
+    },
+    { key: { onboardingStep: 1, onboardingComplete: 1 }, options: { name: 'onboarding_progress' } },
+    { key: { isFlagged: 1 },  options: { name: 'flagged' } },
+    { key: { lastActive: -1 }, options: { name: 'last_active_desc' } },
+    { key: { createdAt: -1 },  options: { name: 'createdAt_desc' } },
+  ],
+
+  matches: [
+    {
+      key:     { users: 1 },
+      options: { unique: true, name: 'users_pair_unique' },
+    },
+    {
+      key:     { expiresAt: 1 },
+      options: { expireAfterSeconds: 0, name: 'matches_ttl' }, // TTL
+    },
+    { key: { status: 1, tier: 1 },    options: { name: 'status_tier' } },
+    { key: { status: 1, createdAt: -1 }, options: { name: 'status_createdAt' } },
+    { key: { users: 1, status: 1 },   options: { name: 'users_status' } },
+    { key: { matchmakerId: 1, status: 1 }, options: { name: 'matchmaker_queue' } },
+  ],
+
+  subscriptions: [
+    { key: { userId: 1 },           options: { unique: true, name: 'userId_unique' } },
+    { key: { tier: 1, status: 1 },  options: { name: 'tier_status' } },
+    { key: { currentPeriodEnd: 1 }, options: { name: 'period_end_expiry_cron' } },
+    { key: { nextBillingAt: 1 },    options: { name: 'next_billing_renewal_cron' } },
+  ],
+
+  payments: [
+    { key: { reference: 1 },       options: { unique: true, sparse: true, name: 'reference_unique' } },
+    { key: { internalRef: 1 },     options: { unique: true, name: 'internalRef_unique' } },
+    { key: { idempotencyKey: 1 },  options: { unique: true, name: 'idempotencyKey_unique' } },
+    { key: { userId: 1, createdAt: -1 }, options: { name: 'userId_history' } },
+    { key: { userId: 1, purpose: 1 },    options: { name: 'userId_purpose' } },
+    { key: { status: 1, createdAt: -1 }, options: { name: 'status_admin' } },
+    { key: { gateway: 1, status: 1 },    options: { name: 'gateway_status' } },
+    { key: { createdAt: -1 },            options: { name: 'createdAt_desc' } },
+  ],
+
+  matchrequests: [
+    { key: { userId: 1, status: 1 }, options: { name: 'userId_status' } },
+    { key: { status: 1, tier: 1 },   options: { name: 'status_tier' } },
+    { key: { bullJobId: 1 },         options: { sparse: true, name: 'bullJobId' } },
+    { key: { createdAt: -1 },        options: { name: 'createdAt_desc' } },
+  ],
+
+  notifications: [
+    { key: { userId: 1, status: 1 },    options: { name: 'userId_status' } },
+    { key: { userId: 1, createdAt: -1 }, options: { name: 'userId_history' } },
+    { key: { status: 1, type: 1 },      options: { name: 'status_type' } },
+    {
+      key:     { readAt: 1 },
+      options: { expireAfterSeconds: 90 * 24 * 60 * 60, sparse: true, name: 'notifications_ttl' },
+    },
+  ],
+}
+
+// ─────────────────────────────────────────────
+// BOOTSTRAP RUNNER
+// ─────────────────────────────────────────────
+
+async function createAllIndexes() {
+  await connectDB()
+  const db = mongoose.connection.db!
+
+  for (const [collection, indexes] of Object.entries(INDEX_DEFINITIONS)) {
+    const col = db.collection(collection)
+    for (const { key, options } of indexes) {
+      try {
+        await col.createIndex(key as any, options as any)
+        console.log(`✅ [${collection}] index: ${options.name}`)
+      } catch (err: any) {
+        if (err.code === 85 || err.code === 86) {
+          // Index already exists with different options — skip in CI
+          console.warn(`⚠️  [${collection}] index exists, skipping: ${options.name}`)
+        } else {
+          console.error(`❌ [${collection}] index failed: ${options.name}`, err.message)
+          throw err
+        }
+      }
+    }
+  }
+
+  console.log('\n📋 Atlas Search index — create manually in Atlas UI:')
+  console.log(JSON.stringify(PROFILES_SEARCH_INDEX, null, 2))
+
+  await mongoose.disconnect()
+  console.log('\n✅ All indexes created')
+}
+
+createAllIndexes().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})
