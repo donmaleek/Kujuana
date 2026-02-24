@@ -1,0 +1,39 @@
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/refresh
+POST   /api/auth/logout
+POST   /api/auth/verify-email
+POST   /api/auth/verify-phone
+
+GET    /api/onboarding/status
+PATCH  /api/onboarding/basic-details
+PATCH  /api/onboarding/background
+PATCH  /api/onboarding/photos
+PATCH  /api/onboarding/relationship-vision
+PATCH  /api/onboarding/preferences
+POST   /api/onboarding/submit
+
+GET    /api/profile/me
+PUT    /api/profile/me
+GET    /api/profile/photos/signed      # returns time-limited URLs
+
+GET    /api/matching/matches           # history
+POST   /api/matching/request           # Priority: consumes 1 credit, returns 1 match attempt
+POST   /api/matching/vip/request       # VIP: creates curated task for matchmaker
+
+GET    /api/subscriptions/me
+POST   /api/subscriptions/upgrade
+POST   /api/subscriptions/cancel
+
+POST   /api/payments/initiate
+POST   /api/payments/webhook/pesapal
+POST   /api/payments/webhook/flutterwave
+
+POST   /api/upload/photos/sign         # signed Cloudinary upload params
+DELETE /api/upload/photos/:publicId
+
+# Admin / Matchmaker
+GET    /api/admin/queue
+POST   /api/admin/matches/introduce
+GET    /api/admin/users
+GET    /api/admin/audit-logs
