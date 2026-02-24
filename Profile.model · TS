@@ -1,0 +1,621 @@
+/**
+ * Profile Model
+ * ─────────────
+ * The central model of the platform. Stores all information collected
+ * across the 6-step onboarding flow plus derived/computed fields.
+ *
+ * Sections mirrored from onboarding:
+ *   1. Plan selection          → stored in Subscription model (ref here)
+ *   2. Basic Details           → gender, age, location, relationshipStatus, occupation
+ *   3. Background & Lifestyle  → lifestyle, personalityTraits, children*, emotionalReadiness
+ *   4. Photos                  → photos[] (Cloudinary, private)
+ *   5. Relationship Vision     → relationshipType, partnerValues, idealPartnerDescription, lifeVision, nonNegotiables
+ *   6. Matching Preferences    → preferences{}
+ *
+ * VIP-only sensitive fields (incomeRange, racePreference, healthStatus) are
+ * encrypted at the APPLICATION LAYER using AES-256-GCM before being written
+ * to this model. The schema stores them as String (encrypted ciphertext).
+ * Decryption happens only in matching.service.ts for VIP matchmakers.
+ *
+ * Indexes:
+ *   userId                          — unique
+ *   location.coordinates            — 2dsphere (geo queries)
+ *   isActive + gender               — compound (candidate pool queries)
+ *   onboardingStep                  — track incomplete profiles
+ *   tier (via subscription lookup)  — not stored here; join in queries
+ */
+
+import mongoose, {
+  Document,
+  Model,
+  Schema,
+  Types,
+  CallbackError,
+} from 'mongoose'
+import {
+  Gender,
+  RelationshipStatus,
+  RelationshipType,
+  ChildrenPreference,
+  EmotionalReadiness,
+  VipAddOn,
+  LIFESTYLE_OPTIONS,
+  PERSONALITY_TRAITS,
+  PARTNER_VALUES,
+  RELIGION_OPTIONS,
+  type ILocation,
+  type IPhoto,
+  type IAgeRange,
+  type IIncomeRange,
+} from '../types/index.js'
+
+// ─────────────────────────────────────────────
+// SUB-DOCUMENT INTERFACES
+// ─────────────────────────────────────────────
+
+export interface IMatchingPreferences {
+  ageRange:       IAgeRange
+  countries:      string[]               // ISO 3166-1 alpha-2 list
+  lifestyle:      string[]               // desired partner lifestyle overlap
+  religion:       string                 // from RELIGION_OPTIONS
+  international:  boolean                // search outside own country
+
+  // ── VIP-only add-ons (encrypted ciphertext when populated) ──
+  incomeRange?:   IIncomeRange           // encrypted
+  racePreference?: string[]              // encrypted
+  healthStatus?:  string                 // encrypted  e.g. 'HIV negative', 'prefer not to say'
+  strictAge?:     boolean                // strict_age_filtering add-on
+  personalityPreference?: string[]       // personality_preference add-on
+  locationFilter?: {                     // location_filtering add-on
+    city?:        string
+    radiusKm?:    number
+  }
+  highlySpecificCriteria?: string        // free text, matchmaker-handled
+}
+
+export interface IScoreBreakdown {
+  relationshipGoals:  number             // 0-100
+  partnerValues:      number             // 0-100
+  lifestyle:          number             // 0-100
+  preferences:        number             // 0-100
+  emotionalReadiness: number             // 0-100
+}
+
+// ─────────────────────────────────────────────
+// MAIN INTERFACE
+// ─────────────────────────────────────────────
+
+export interface IProfile extends Document {
+  _id:    Types.ObjectId
+  userId: Types.ObjectId                 // ref: User
+
+  // ── Basic Details ────────────────────────
+  gender:             Gender
+  age:                number
+  dateOfBirth?:       Date               // optional, used to auto-update age yearly
+  location:           ILocation
+  relationshipStatus: RelationshipStatus
+  occupation:         string
+
+  // ── Background & Lifestyle ───────────────
+  lifestyle:          string[]
+  personalityTraits:  string[]
+  hasChildren:        boolean
+  childrenCount:      number             // 0 if hasChildren = false
+  wantsChildren:      ChildrenPreference
+  emotionalReadiness: EmotionalReadiness
+  religion:           string             // own religion (from RELIGION_OPTIONS)
+
+  // ── Photos ───────────────────────────────
+  photos:             IPhoto[]           // max 3, all private
+
+  // ── Relationship Vision ──────────────────
+  relationshipType:            RelationshipType
+  partnerValues:               string[]
+  idealPartnerDescription:     string    // free text
+  lifeVision:                  string    // free text, "summarize shared future"
+  nonNegotiables:              string[]  // deal-breakers (free text list)
+
+  // ── Matching Preferences ─────────────────
+  preferences:        IMatchingPreferences
+
+  // ── Profile Management ───────────────────
+  profileCompleteness: number            // 0-100, recomputed on save
+  onboardingStep:      number            // 1-6, tracks wizard progress
+  onboardingComplete:  boolean           // true after step 6 submitted
+
+  isActive:            boolean           // eligible for matching
+  isVisible:           boolean           // user can hide themselves temporarily
+  isPaused:            boolean           // paused matching (user request)
+  pausedUntil?:        Date
+
+  lastActive:          Date
+  lastMatchedAt?:      Date
+
+  // ── Admin / Matchmaker annotations ──────
+  matchmakerNote?:     string            // internal note (not shown to user)
+  flaggedFor?:         string            // internal flag reason
+  isFlagged:           boolean
+
+  createdAt:           Date
+  updatedAt:           Date
+
+  // ── Virtual ─────────────────────────────
+  primaryPhoto: IPhoto | undefined
+
+  // ── Instance Methods ─────────────────────
+  computeCompleteness(): number
+}
+
+// ─────────────────────────────────────────────
+// SUB-SCHEMAS
+// ─────────────────────────────────────────────
+
+const locationSchema = new Schema(
+  {
+    city:        { type: String, required: true, trim: true },
+    country:     { type: String, required: true, trim: true },
+    countryCode: { type: String, required: true, uppercase: true, length: 2 },
+    coordinates: {
+      type:        { type: String, enum: ['Point'], default: 'Point' },
+      coordinates: {
+        type:     [Number],                // [longitude, latitude]
+        required: true,
+        validate: {
+          validator: (v: number[]) =>
+            v.length === 2 &&
+            v[0] >= -180 && v[0] <= 180 &&   // longitude
+            v[1] >= -90  && v[1] <= 90,       // latitude
+          message: 'Coordinates must be [longitude, latitude] within valid range',
+        },
+      },
+    },
+  },
+  { _id: false }
+)
+
+const photoSchema = new Schema(
+  {
+    publicId:   { type: String, required: true },    // Cloudinary public_id
+    url:        { type: String, required: true },    // Cloudinary secure_url (base)
+    isPrimary:  { type: Boolean, default: false },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+)
+
+const ageRangeSchema = new Schema(
+  {
+    min: { type: Number, required: true, min: 18, max: 80 },
+    max: { type: Number, required: true, min: 18, max: 80 },
+  },
+  { _id: false }
+)
+
+const incomeRangeSchema = new Schema(
+  {
+    min:      { type: Number, required: true },
+    max:      { type: Number, required: true },
+    currency: { type: String, default: 'KES' },
+  },
+  { _id: false }
+)
+
+const locationFilterSchema = new Schema(
+  {
+    city:     { type: String },
+    radiusKm: { type: Number, min: 1, max: 500 },
+  },
+  { _id: false }
+)
+
+const preferencesSchema = new Schema(
+  {
+    ageRange: {
+      type:     ageRangeSchema,
+      required: true,
+      default:  () => ({ min: 20, max: 45 }),
+    },
+    countries: {
+      type:    [String],
+      default: [],
+    },
+    lifestyle: {
+      type:    [String],
+      default: [],
+    },
+    religion: {
+      type:    String,
+      default: 'any',
+    },
+    international: {
+      type:    Boolean,
+      default: false,
+    },
+
+    // ── VIP-only fields ──────────────────────
+    // Stored as encrypted ciphertext strings when populated.
+    // Schema type is String to hold the AES-256-GCM encrypted payload.
+
+    incomeRange: {
+      type: String,         // JSON-stringified IIncomeRange → AES encrypted
+      select: false,        // never returned unless explicitly requested
+    },
+    racePreference: {
+      type:   String,       // JSON-stringified string[] → AES encrypted
+      select: false,
+    },
+    healthStatus: {
+      type:   String,       // plaintext string → AES encrypted
+      select: false,
+    },
+    strictAge: {
+      type:    Boolean,
+      default: false,
+    },
+    personalityPreference: {
+      type:    [String],
+      default: [],
+    },
+    locationFilter: {
+      type: locationFilterSchema,
+    },
+    highlySpecificCriteria: {
+      type: String,
+      maxlength: 1000,
+    },
+  },
+  { _id: false }
+)
+
+// ─────────────────────────────────────────────
+// MAIN SCHEMA
+// ─────────────────────────────────────────────
+
+const profileSchema = new Schema<IProfile>(
+  {
+    userId: {
+      type:     Schema.Types.ObjectId,
+      ref:      'User',
+      required: true,
+      unique:   true,
+    },
+
+    // ── Basic Details ────────────────────────
+
+    gender: {
+      type:    String,
+      enum:    Object.values(Gender),
+      // required after step 2
+    },
+
+    age: {
+      type: Number,
+      min:  [18, 'Must be at least 18 years old'],
+      max:  [100, 'Age seems invalid'],
+    },
+
+    dateOfBirth: {
+      type: Date,
+    },
+
+    location: {
+      type: locationSchema,
+    },
+
+    relationshipStatus: {
+      type: String,
+      enum: Object.values(RelationshipStatus),
+    },
+
+    occupation: {
+      type:      String,
+      trim:      true,
+      maxlength: 100,
+    },
+
+    // ── Background & Lifestyle ───────────────
+
+    lifestyle: {
+      type:     [String],
+      default:  [],
+      validate: {
+        validator: (v: string[]) => v.length <= 8,
+        message:   'Maximum 8 lifestyle options',
+      },
+    },
+
+    personalityTraits: {
+      type:     [String],
+      default:  [],
+      validate: {
+        validator: (v: string[]) => v.length <= 6,
+        message:   'Maximum 6 personality traits',
+      },
+    },
+
+    hasChildren: {
+      type:    Boolean,
+      default: false,
+    },
+
+    childrenCount: {
+      type:    Number,
+      default: 0,
+      min:     0,
+      max:     20,
+    },
+
+    wantsChildren: {
+      type: String,
+      enum: Object.values(ChildrenPreference),
+    },
+
+    emotionalReadiness: {
+      type: String,
+      enum: Object.values(EmotionalReadiness),
+    },
+
+    religion: {
+      type:    String,
+      default: 'prefer-not-to-say',
+    },
+
+    // ── Photos ───────────────────────────────
+
+    photos: {
+      type:     [photoSchema],
+      default:  [],
+      validate: {
+        validator: (v: IPhoto[]) => v.length <= 3,
+        message:   'Maximum 3 photos allowed',
+      },
+    },
+
+    // ── Relationship Vision ──────────────────
+
+    relationshipType: {
+      type: String,
+      enum: Object.values(RelationshipType),
+    },
+
+    partnerValues: {
+      type:     [String],
+      default:  [],
+      validate: {
+        validator: (v: string[]) => v.length <= 5,
+        message:   'Maximum 5 partner values',
+      },
+    },
+
+    idealPartnerDescription: {
+      type:      String,
+      maxlength: [1000, 'Description cannot exceed 1000 characters'],
+      trim:      true,
+    },
+
+    lifeVision: {
+      type:      String,
+      maxlength: [500, 'Life vision cannot exceed 500 characters'],
+      trim:      true,
+    },
+
+    nonNegotiables: {
+      type:     [String],
+      default:  [],
+      validate: {
+        validator: (v: string[]) => v.length <= 10,
+        message:   'Maximum 10 non-negotiables',
+      },
+    },
+
+    // ── Matching Preferences ─────────────────
+
+    preferences: {
+      type:    preferencesSchema,
+      default: () => ({}),
+    },
+
+    // ── Profile Management ───────────────────
+
+    profileCompleteness: {
+      type:    Number,
+      default: 0,
+      min:     0,
+      max:     100,
+    },
+
+    onboardingStep: {
+      type:    Number,
+      default: 1,
+      min:     1,
+      max:     6,
+    },
+
+    onboardingComplete: {
+      type:    Boolean,
+      default: false,
+    },
+
+    isActive: {
+      type:    Boolean,
+      default: false, // becomes true after onboarding complete
+    },
+
+    isVisible: {
+      type:    Boolean,
+      default: true,
+    },
+
+    isPaused: {
+      type:    Boolean,
+      default: false,
+    },
+
+    pausedUntil: {
+      type: Date,
+    },
+
+    lastActive: {
+      type:    Date,
+      default: Date.now,
+    },
+
+    lastMatchedAt: {
+      type: Date,
+    },
+
+    // ── Admin ────────────────────────────────
+
+    matchmakerNote: {
+      type:   String,
+      select: false,
+    },
+
+    flaggedFor: {
+      type:   String,
+      select: false,
+    },
+
+    isFlagged: {
+      type:    Boolean,
+      default: false,
+      select:  false,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+)
+
+// ─────────────────────────────────────────────
+// INDEXES
+// ─────────────────────────────────────────────
+
+// Primary lookup
+profileSchema.index({ userId: 1 }, { unique: true })
+
+// Geo queries (candidate search by location)
+profileSchema.index({ 'location.coordinates': '2dsphere' })
+
+// Candidate pool — compound for matching queries
+profileSchema.index({ isActive: 1, gender: 1, onboardingComplete: 1 })
+profileSchema.index({ isActive: 1, 'location.countryCode': 1 })
+
+// Admin queries
+profileSchema.index({ onboardingStep: 1, onboardingComplete: 1 })
+profileSchema.index({ isFlagged: 1 })
+profileSchema.index({ lastActive: -1 })
+profileSchema.index({ createdAt: -1 })
+
+// ─────────────────────────────────────────────
+// VIRTUALS
+// ─────────────────────────────────────────────
+
+profileSchema.virtual('primaryPhoto').get(function (this: IProfile) {
+  return this.photos.find((p) => p.isPrimary) ?? this.photos[0]
+})
+
+// ─────────────────────────────────────────────
+// METHODS
+// ─────────────────────────────────────────────
+
+/**
+ * Compute profile completeness score (0-100).
+ * Each section contributes a weighted percentage.
+ *
+ * Weights:
+ *   Basic details          20%
+ *   Background/lifestyle   20%
+ *   Photos                 20%
+ *   Relationship vision    20%
+ *   Preferences            20%
+ */
+profileSchema.methods.computeCompleteness = function (
+  this: IProfile
+): number {
+  let score = 0
+
+  // Basic details (20 pts)
+  if (this.gender)             score += 4
+  if (this.age)                score += 4
+  if (this.location?.city)     score += 4
+  if (this.relationshipStatus) score += 4
+  if (this.occupation)         score += 4
+
+  // Background & lifestyle (20 pts)
+  if (this.lifestyle?.length)          score += 5
+  if (this.personalityTraits?.length)  score += 5
+  if (this.wantsChildren != null)      score += 5
+  if (this.emotionalReadiness)         score += 5
+
+  // Photos (20 pts)
+  const photoCount = this.photos?.length ?? 0
+  score += Math.min(photoCount, 3) * (20 / 3) // ~6.67 per photo
+
+  // Relationship vision (20 pts)
+  if (this.relationshipType)                score += 4
+  if (this.partnerValues?.length)           score += 4
+  if (this.idealPartnerDescription?.length) score += 4
+  if (this.lifeVision?.length)              score += 4
+  if (this.nonNegotiables?.length)          score += 4
+
+  // Preferences (20 pts)
+  if (this.preferences?.ageRange)     score += 5
+  if (this.preferences?.countries?.length) score += 5
+  if (this.preferences?.religion)     score += 5
+  if (this.preferences?.lifestyle?.length) score += 5
+
+  return Math.min(Math.round(score), 100)
+}
+
+// ─────────────────────────────────────────────
+// PRE-SAVE HOOKS
+// ─────────────────────────────────────────────
+
+// Recompute completeness on every save
+profileSchema.pre('save', function (next) {
+  this.profileCompleteness = this.computeCompleteness()
+
+  // Ensure only one photo is marked primary
+  const primaryPhotos = this.photos.filter((p) => p.isPrimary)
+  if (primaryPhotos.length === 0 && this.photos.length > 0) {
+    this.photos[0].isPrimary = true
+  } else if (primaryPhotos.length > 1) {
+    this.photos.forEach((p, i) => { p.isPrimary = i === 0 })
+  }
+
+  // Auto-set isActive when onboarding completes
+  if (this.onboardingComplete && !this.isActive) {
+    this.isActive = true
+  }
+
+  next()
+})
+
+// ─────────────────────────────────────────────
+// TRANSFORM
+// ─────────────────────────────────────────────
+
+profileSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    // Strip VIP encrypted fields from public JSON
+    if (ret.preferences) {
+      delete ret.preferences.incomeRange
+      delete ret.preferences.racePreference
+      delete ret.preferences.healthStatus
+    }
+    delete ret.matchmakerNote
+    delete ret.flaggedFor
+    delete ret.isFlagged
+    return ret
+  },
+})
+
+// ─────────────────────────────────────────────
+// MODEL
+// ─────────────────────────────────────────────
+
+export const Profile = mongoose.model<IProfile>('Profile', profileSchema)
