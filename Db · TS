@@ -1,0 +1,43 @@
+import mongoose from 'mongoose'
+
+const MONGODB_URI = process.env.MONGODB_URI as string
+
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI environment variable is not defined')
+}
+
+let isConnected = false
+
+export async function connectDB(): Promise<void> {
+  if (isConnected) return
+
+  mongoose.set('strictQuery', true)
+
+  await mongoose.connect(MONGODB_URI, {
+    maxPoolSize: 20,           // Atlas M10: max 1500 connections
+    minPoolSize: 5,
+    socketTimeoutMS: 45000,
+    serverSelectionTimeoutMS: 10000,
+    heartbeatFrequencyMS: 10000,
+    retryWrites: true,
+    w: 'majority',
+  })
+
+  isConnected = true
+  console.log('✅ MongoDB Atlas connected')
+
+  mongoose.connection.on('error', (err) => {
+    console.error('MongoDB error:', err)
+    isConnected = false
+  })
+
+  mongoose.connection.on('disconnected', () => {
+    console.warn('MongoDB disconnected — will reconnect on next request')
+    isConnected = false
+  })
+}
+
+export async function disconnectDB(): Promise<void> {
+  await mongoose.disconnect()
+  isConnected = false
+}
