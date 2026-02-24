@@ -1,0 +1,332 @@
+/**
+ * Payment Model
+ * ─────────────
+ * Immutable transaction ledger. Every payment attempt — successful or not —
+ * creates a record here. Subscriptions are never directly modified by this
+ * model; the payment.service.ts calls creditSubscription() after verification.
+ *
+ * Idempotency:
+ *   Every payment has an `idempotencyKey` = SHA-256(userId + purpose + timeBucket).
+ *   The timeBucket is a 5-minute window, so duplicate API calls within 5 minutes
+ *   return the existing pending payment instead of creating a new one.
+ *   IPN webhook callbacks are also idempotent — if a webhook fires twice for the
+ *   same gateway reference, the second upsert is a no-op.
+ *
+ * Indexes:
+ *   reference         — unique (gateway transaction reference)
+ *   idempotencyKey    — unique (prevents double-charge)
+ *   userId + purpose  — billing history queries
+ *   status            — admin reconciliation
+ */
+
+import mongoose, { Document, Schema, Types } from 'mongoose'
+import {
+  PaymentGateway,
+  PaymentStatus,
+  PaymentPurpose,
+} from '../types/index.js'
+
+// ─────────────────────────────────────────────
+// TIER PRICING CONSTANTS
+// (authoritative source — also in packages/shared/constants/tiers.ts)
+// ─────────────────────────────────────────────
+
+export const TIER_PRICES: Record<PaymentPurpose, number> = {
+  [PaymentPurpose.VipMonthly]:       10000,  // KES
+  [PaymentPurpose.PrioritySingle]:     500,  // KES
+  [PaymentPurpose.PriorityBundle5]:   2000,  // KES
+  [PaymentPurpose.PriorityBundle10]:  3500,  // KES
+}
+
+export const CREDITS_GRANTED: Record<PaymentPurpose, number> = {
+  [PaymentPurpose.VipMonthly]:       0,   // VIP doesn't use credits
+  [PaymentPurpose.PrioritySingle]:   1,
+  [PaymentPurpose.PriorityBundle5]:  5,
+  [PaymentPurpose.PriorityBundle10]: 10,
+}
+
+// ─────────────────────────────────────────────
+// INTERFACES
+// ─────────────────────────────────────────────
+
+export interface IMpesaMetadata {
+  merchantRequestId?:  string
+  checkoutRequestId?:  string
+  responseCode?:       string
+  responseDescription?: string
+  customerMessage?:    string
+  mpesaReceiptNumber?: string
+  transactionDate?:    string
+  phoneNumber?:        string
+}
+
+export interface IPesapalMetadata {
+  orderTrackingId?:    string
+  merchantReference?:  string
+  paymentMethod?:      string
+  paymentAccount?:     string
+  confirmationCode?:   string
+  paymentStatusDescription?: string
+}
+
+export interface IFlutterwaveMetadata {
+  flwRef?:             string
+  txRef?:              string
+  currency?:           string
+  chargedAmount?:      number
+  appFee?:             number
+  merchantFee?:        number
+  processorResponse?:  string
+  authModel?:          string
+  ip?:                 string
+  narration?:          string
+  status?:             string
+  paymentType?:        string
+  createdAt?:          string
+  accountId?:          number
+  meta?:               Record<string, unknown>
+}
+
+export interface IPayment extends Document {
+  _id:             Types.ObjectId
+  userId:          Types.ObjectId   // ref: User
+  subscriptionId?: Types.ObjectId   // ref: Subscription (set on completion)
+
+  // Gateway info
+  gateway:         PaymentGateway
+  reference:       string           // gateway's transaction reference (unique)
+  internalRef:     string           // our internal reference (unique)
+  idempotencyKey:  string           // SHA-256 hash for dedup
+
+  // Amount
+  amount:          number           // in base currency (KES by default)
+  currency:        string           // ISO 4217 e.g. 'KES', 'USD'
+  amountInKes?:    number           // converted amount if foreign currency
+
+  // Purpose
+  purpose:         PaymentPurpose
+  creditsGranted:  number           // credits to add on completion
+
+  // Status
+  status:          PaymentStatus
+  failureReason?:  string           // populated on failed/refunded
+
+  // Phone for M-Pesa
+  phone?:          string           // E.164, only for M-Pesa STK
+
+  // Gateway-specific raw payload (stored for audit/reconciliation)
+  metadata: IMpesaMetadata | IPesapalMetadata | IFlutterwaveMetadata | Record<string, unknown>
+
+  // Webhook tracking
+  webhookReceivedAt?: Date
+  webhookPayload?:    Record<string, unknown> // raw IPN body (select: false)
+
+  // Completion
+  completedAt?:    Date
+  refundedAt?:     Date
+  refundRef?:      string
+
+  // Admin flags
+  isReconciled:    boolean          // marked by admin after manual check
+  reconcileNote?:  string
+
+  createdAt:       Date
+  updatedAt:       Date
+}
+
+// ─────────────────────────────────────────────
+// SCHEMA
+// ─────────────────────────────────────────────
+
+const paymentSchema = new Schema<IPayment>(
+  {
+    userId: {
+      type:     Schema.Types.ObjectId,
+      ref:      'User',
+      required: true,
+    },
+
+    subscriptionId: {
+      type: Schema.Types.ObjectId,
+      ref:  'Subscription',
+    },
+
+    // ── Gateway ───────────────────────────────
+
+    gateway: {
+      type:     String,
+      enum:     Object.values(PaymentGateway),
+      required: true,
+    },
+
+    reference: {
+      type:   String,
+      unique: true,
+      sparse: true,  // sparse because reference may not be set until gateway responds
+    },
+
+    internalRef: {
+      type:     String,
+      required: true,
+      unique:   true,
+    },
+
+    idempotencyKey: {
+      type:     String,
+      required: true,
+      unique:   true,
+    },
+
+    // ── Amount ────────────────────────────────
+
+    amount: {
+      type:     Number,
+      required: true,
+      min:      0,
+    },
+
+    currency: {
+      type:    String,
+      default: 'KES',
+      uppercase: true,
+      length:  3,
+    },
+
+    amountInKes: {
+      type: Number,
+      min:  0,
+    },
+
+    // ── Purpose ───────────────────────────────
+
+    purpose: {
+      type:     String,
+      enum:     Object.values(PaymentPurpose),
+      required: true,
+    },
+
+    creditsGranted: {
+      type:    Number,
+      default: 0,
+      min:     0,
+    },
+
+    // ── Status ────────────────────────────────
+
+    status: {
+      type:    String,
+      enum:    Object.values(PaymentStatus),
+      default: PaymentStatus.Pending,
+    },
+
+    failureReason: {
+      type: String,
+    },
+
+    // ── M-Pesa ────────────────────────────────
+
+    phone: {
+      type:  String,
+      match: [/^\+[1-9]\d{7,14}$/, 'Phone must be in E.164 format'],
+    },
+
+    // ── Metadata ──────────────────────────────
+
+    metadata: {
+      type:    Schema.Types.Mixed,
+      default: {},
+    },
+
+    webhookReceivedAt: {
+      type: Date,
+    },
+
+    webhookPayload: {
+      type:   Schema.Types.Mixed,
+      select: false,   // never returned; audit use only
+    },
+
+    // ── Completion ────────────────────────────
+
+    completedAt: {
+      type: Date,
+    },
+
+    refundedAt: {
+      type: Date,
+    },
+
+    refundRef: {
+      type: String,
+    },
+
+    // ── Admin ─────────────────────────────────
+
+    isReconciled: {
+      type:    Boolean,
+      default: false,
+    },
+
+    reconcileNote: {
+      type: String,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+)
+
+// ─────────────────────────────────────────────
+// INDEXES
+// ─────────────────────────────────────────────
+
+paymentSchema.index({ reference: 1 },       { unique: true, sparse: true })
+paymentSchema.index({ internalRef: 1 },      { unique: true })
+paymentSchema.index({ idempotencyKey: 1 },   { unique: true })
+paymentSchema.index({ userId: 1, createdAt: -1 })          // billing history
+paymentSchema.index({ userId: 1, purpose: 1 })             // purpose filter
+paymentSchema.index({ status: 1, createdAt: -1 })          // admin reconciliation
+paymentSchema.index({ gateway: 1, status: 1 })             // gateway-specific queries
+paymentSchema.index({ createdAt: -1 })                     // global recency
+
+// ─────────────────────────────────────────────
+// PRE-SAVE: AUTO-SET FIELDS
+// ─────────────────────────────────────────────
+
+paymentSchema.pre('save', function (next) {
+  // Auto-set creditsGranted from purpose lookup if not set
+  if (this.isNew && !this.creditsGranted && this.purpose) {
+    this.creditsGranted = CREDITS_GRANTED[this.purpose] ?? 0
+  }
+
+  // Set completedAt on first transition to completed
+  if (this.isModified('status') && this.status === PaymentStatus.Completed && !this.completedAt) {
+    this.completedAt = new Date()
+  }
+
+  // Set refundedAt on first transition to refunded
+  if (this.isModified('status') && this.status === PaymentStatus.Refunded && !this.refundedAt) {
+    this.refundedAt = new Date()
+  }
+
+  next()
+})
+
+// ─────────────────────────────────────────────
+// TRANSFORM
+// ─────────────────────────────────────────────
+
+paymentSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    delete ret.webhookPayload
+    delete ret.idempotencyKey
+    return ret
+  },
+})
+
+// ─────────────────────────────────────────────
+// MODEL
+// ─────────────────────────────────────────────
+
+export const Payment = mongoose.model<IPayment>('Payment', paymentSchema)
