@@ -1,0 +1,313 @@
+/**
+ * Match Model
+ * ───────────
+ * Records a compatibility match between two users.
+ *
+ * Key design decisions:
+ *
+ * 1. SORTED USER PAIR — users[] is always stored sorted ([smaller_id, larger_id]).
+ *    This prevents duplicate matches and allows a unique compound index on the pair.
+ *
+ * 2. TIER-AWARE — the tier at time of match is stored. This determines which
+ *    scoring bonus was applied and whether matchmaker review was required.
+ *
+ * 3. SCORE BREAKDOWN — full score breakdown stored so matchmakers and
+ *    (VIP only) users can see why they were matched.
+ *
+ * 4. TTL INDEX — matches expire after 30 days via MongoDB TTL on expiresAt.
+ *    Expired matches are automatically removed by MongoDB.
+ *
+ * 5. PHOTO REVEAL — photos remain private. On status → 'accepted', the API
+ *    generates signed Cloudinary URLs valid for 1 hour.
+ *
+ * Indexes:
+ *   users[]         — compound unique (prevents duplicate pairs)
+ *   status          — filter active/pending matches
+ *   expiresAt       — TTL auto-delete
+ *   tier            — admin queue filters
+ */
+
+import mongoose, { Document, Schema, Types } from 'mongoose'
+import { MatchStatus, SubscriptionTier } from '../types/index.js'
+
+// ─────────────────────────────────────────────
+// INTERFACES
+// ─────────────────────────────────────────────
+
+export interface IScoreBreakdown {
+  relationshipGoals:  number   // 0-100
+  partnerValues:      number   // 0-100
+  lifestyle:          number   // 0-100
+  preferences:        number   // 0-100
+  emotionalReadiness: number   // 0-100
+  vipBonus?:          number   // 0-5, VIP tier only
+}
+
+export interface IMatchResponse {
+  userId:      Types.ObjectId
+  response:    'accepted' | 'declined'
+  respondedAt: Date
+  note?:       string          // optional message to matchmaker
+}
+
+export interface IMatch extends Document {
+  _id: Types.ObjectId
+
+  // The matched pair — stored sorted ascending for dedup
+  users: [Types.ObjectId, Types.ObjectId]
+
+  // Who/what triggered this match
+  initiatedBy: Types.ObjectId  // userId OR system ObjectId (admin/worker)
+  initiatedBySystem: boolean   // true if cron/worker created it
+
+  // Tier context
+  tier: SubscriptionTier
+
+  // Scoring
+  compatibilityScore: number   // 0-100, final weighted total
+  scoreBreakdown:     IScoreBreakdown
+
+  // Status lifecycle:
+  //   pending    → waiting for matchmaker review (VIP) or auto-introduction (others)
+  //   introduced → both users notified, photos partially revealed
+  //   accepted   → at least one user accepted (full reveal)
+  //   declined   → either user declined
+  //   expired    → TTL elapsed with no response
+  status: MatchStatus
+
+  // Matchmaker fields (VIP)
+  matchmakerId?:    Types.ObjectId  // ref: User (role: matchmaker)
+  matchmakerNote?:  string          // shown to both users on introduction
+  reviewedAt?:      Date
+
+  // User responses
+  responses: IMatchResponse[]
+
+  // Credit / billing tracking
+  creditUsed:         boolean       // was a priority credit deducted?
+  paymentId?:         Types.ObjectId // ref: Payment
+
+  // Lifecycle timestamps
+  introducedAt?: Date
+  acceptedAt?:   Date
+  declinedAt?:   Date
+  expiresAt:     Date               // TTL field — 30 days after introduction
+
+  createdAt: Date
+  updatedAt: Date
+
+  // ── Instance Methods ──
+  hasUserResponded(userId: Types.ObjectId): boolean
+  getOtherUserId(userId: Types.ObjectId): Types.ObjectId
+}
+
+// ─────────────────────────────────────────────
+// SUB-SCHEMAS
+// ─────────────────────────────────────────────
+
+const scoreBreakdownSchema = new Schema(
+  {
+    relationshipGoals:  { type: Number, required: true, min: 0, max: 100 },
+    partnerValues:      { type: Number, required: true, min: 0, max: 100 },
+    lifestyle:          { type: Number, required: true, min: 0, max: 100 },
+    preferences:        { type: Number, required: true, min: 0, max: 100 },
+    emotionalReadiness: { type: Number, required: true, min: 0, max: 100 },
+    vipBonus:           { type: Number, default: 0, min: 0, max: 5 },
+  },
+  { _id: false }
+)
+
+const matchResponseSchema = new Schema(
+  {
+    userId:      { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    response:    { type: String, enum: ['accepted', 'declined'], required: true },
+    respondedAt: { type: Date, required: true },
+    note:        { type: String, maxlength: 300 },
+  },
+  { _id: false }
+)
+
+// ─────────────────────────────────────────────
+// MAIN SCHEMA
+// ─────────────────────────────────────────────
+
+const matchSchema = new Schema<IMatch>(
+  {
+    users: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      required: true,
+      validate: {
+        validator: (v: Types.ObjectId[]) => v.length === 2,
+        message:   'A match must have exactly 2 users',
+      },
+    },
+
+    initiatedBy: {
+      type:     Schema.Types.ObjectId,
+      ref:      'User',
+      required: true,
+    },
+
+    initiatedBySystem: {
+      type:    Boolean,
+      default: false,
+    },
+
+    tier: {
+      type:     String,
+      enum:     Object.values(SubscriptionTier),
+      required: true,
+    },
+
+    compatibilityScore: {
+      type:     Number,
+      required: true,
+      min:      0,
+      max:      100,
+    },
+
+    scoreBreakdown: {
+      type:     scoreBreakdownSchema,
+      required: true,
+    },
+
+    status: {
+      type:    String,
+      enum:    Object.values(MatchStatus),
+      default: MatchStatus.Pending,
+    },
+
+    // ── Matchmaker ───────────────────────────
+
+    matchmakerId: {
+      type: Schema.Types.ObjectId,
+      ref:  'User',
+    },
+
+    matchmakerNote: {
+      type:      String,
+      maxlength: 1000,
+    },
+
+    reviewedAt: {
+      type: Date,
+    },
+
+    // ── User Responses ───────────────────────
+
+    responses: {
+      type:    [matchResponseSchema],
+      default: [],
+    },
+
+    // ── Billing ──────────────────────────────
+
+    creditUsed: {
+      type:    Boolean,
+      default: false,
+    },
+
+    paymentId: {
+      type: Schema.Types.ObjectId,
+      ref:  'Payment',
+    },
+
+    // ── Timestamps ───────────────────────────
+
+    introducedAt: { type: Date },
+    acceptedAt:   { type: Date },
+    declinedAt:   { type: Date },
+
+    expiresAt: {
+      type:     Date,
+      required: true,
+      // TTL index below — MongoDB auto-deletes the document at this time
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+)
+
+// ─────────────────────────────────────────────
+// INDEXES
+// ─────────────────────────────────────────────
+
+// Unique pair — prevents matching same two users twice
+// (users[] stored sorted, so [A,B] and [B,A] both map to same document)
+matchSchema.index({ users: 1 }, { unique: true })
+
+// TTL — MongoDB auto-expires documents when expiresAt is reached
+matchSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+
+// Admin queue — pending + tier filtering
+matchSchema.index({ status: 1, tier: 1 })
+matchSchema.index({ status: 1, createdAt: -1 })
+
+// Per-user match lookup
+matchSchema.index({ users: 1, status: 1 })
+
+// Matchmaker workload
+matchSchema.index({ matchmakerId: 1, status: 1 })
+
+// ─────────────────────────────────────────────
+// PRE-SAVE: SORT USER PAIR
+// ─────────────────────────────────────────────
+
+matchSchema.pre('save', function (next) {
+  // Sort users array so [B,A] and [A,B] always become the same document
+  if (this.isNew && this.users.length === 2) {
+    const [a, b] = this.users
+    if (a.toString() > b.toString()) {
+      this.users = [b, a]
+    }
+  }
+
+  // Set expiresAt to 30 days after introduction (or creation if not VIP)
+  if (this.isNew && !this.expiresAt) {
+    this.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  }
+
+  // Update status timestamps
+  if (this.isModified('status')) {
+    const now = new Date()
+    if (this.status === MatchStatus.Introduced && !this.introducedAt) {
+      this.introducedAt = now
+    }
+    if (this.status === MatchStatus.Accepted && !this.acceptedAt) {
+      this.acceptedAt = now
+    }
+    if (this.status === MatchStatus.Declined && !this.declinedAt) {
+      this.declinedAt = now
+    }
+  }
+
+  next()
+})
+
+// ─────────────────────────────────────────────
+// INSTANCE METHODS
+// ─────────────────────────────────────────────
+
+matchSchema.methods.hasUserResponded = function (
+  userId: Types.ObjectId
+): boolean {
+  return this.responses.some(
+    (r: IMatchResponse) => r.userId.toString() === userId.toString()
+  )
+}
+
+matchSchema.methods.getOtherUserId = function (
+  userId: Types.ObjectId
+): Types.ObjectId {
+  return this.users.find(
+    (id: Types.ObjectId) => id.toString() !== userId.toString()
+  )
+}
+
+// ─────────────────────────────────────────────
+// MODEL
+// ─────────────────────────────────────────────
+
+export const Match = mongoose.model<IMatch>('Match', matchSchema)
