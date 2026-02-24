@@ -1,0 +1,207 @@
+import { Types } from 'mongoose'
+
+// ─────────────────────────────────────────────
+// PRIMITIVE ENUMS
+// ─────────────────────────────────────────────
+
+export enum Gender {
+  Male   = 'male',
+  Female = 'female',
+  Other  = 'other',
+}
+
+export enum RelationshipStatus {
+  Single    = 'single',
+  Divorced  = 'divorced',
+  Widowed   = 'widowed',
+  Separated = 'separated',
+}
+
+export enum RelationshipType {
+  LongTerm   = 'long-term',
+  Marriage   = 'marriage',
+  Casual     = 'casual',
+  Friendship = 'friendship',
+}
+
+export enum ChildrenPreference {
+  Yes  = 'yes',
+  No   = 'no',
+  Open = 'open',
+}
+
+export enum EmotionalReadiness {
+  Ready     = 'ready',
+  Healing   = 'healing',
+  Exploring = 'exploring',
+}
+
+export enum SubscriptionTier {
+  Standard = 'standard',
+  Priority = 'priority',
+  VIP      = 'vip',
+}
+
+export enum SubscriptionStatus {
+  Active    = 'active',
+  Expired   = 'expired',
+  Cancelled = 'cancelled',
+  PastDue   = 'past_due',
+}
+
+export enum MatchStatus {
+  Pending    = 'pending',
+  Introduced = 'introduced',
+  Accepted   = 'accepted',
+  Declined   = 'declined',
+  Expired    = 'expired',
+}
+
+export enum PaymentGateway {
+  Pesapal     = 'pesapal',
+  Flutterwave = 'flutterwave',
+  Mpesa       = 'mpesa',
+}
+
+export enum PaymentStatus {
+  Pending   = 'pending',
+  Completed = 'completed',
+  Failed    = 'failed',
+  Refunded  = 'refunded',
+}
+
+export enum PaymentPurpose {
+  VipMonthly       = 'vip_monthly',
+  PrioritySingle   = 'priority_single',
+  PriorityBundle5  = 'priority_bundle_5',
+  PriorityBundle10 = 'priority_bundle_10',
+}
+
+export enum UserRole {
+  User       = 'user',
+  Admin      = 'admin',
+  Matchmaker = 'matchmaker',
+}
+
+// ─────────────────────────────────────────────
+// VIP ADD-ON KEYS
+// ─────────────────────────────────────────────
+
+export enum VipAddOn {
+  LocationFiltering     = 'location_filtering',
+  StrictAgeFiltering    = 'strict_age_filtering',
+  PersonalityPreference = 'personality_preference',
+  InternationalSearch   = 'international_search',
+  ReligiousFiltering    = 'religious_filtering',
+  ConfidentialDetails   = 'confidential_details',
+  IncomeBracket         = 'income_bracket',
+  RacePreference        = 'race_preference',
+  HighlySpecific        = 'highly_specific_criteria',
+}
+
+// ─────────────────────────────────────────────
+// LIFESTYLE + PERSONALITY CONSTANTS
+// ─────────────────────────────────────────────
+
+export const LIFESTYLE_OPTIONS = [
+  'active',
+  'homebody',
+  'traveller',
+  'foodie',
+  'fitness-focused',
+  'spiritual',
+  'career-driven',
+  'family-oriented',
+  'creative',
+  'outdoorsy',
+  'social-butterfly',
+  'minimalist',
+  'night-owl',
+  'early-riser',
+  'bookworm',
+  'entrepreneur',
+] as const
+
+export const PERSONALITY_TRAITS = [
+  'introvert',
+  'extrovert',
+  'ambivert',
+  'analytical',
+  'empathetic',
+  'adventurous',
+  'nurturing',
+  'ambitious',
+  'grounded',
+  'spontaneous',
+  'traditional',
+  'progressive',
+  'humorous',
+  'serious',
+  'optimistic',
+  'realistic',
+] as const
+
+export const PARTNER_VALUES = [
+  'honesty',
+  'ambition',
+  'kindness',
+  'family-oriented',
+  'spirituality',
+  'loyalty',
+  'independence',
+  'communication',
+  'humor',
+  'intelligence',
+  'compassion',
+  'integrity',
+] as const
+
+export const RELIGION_OPTIONS = [
+  'christian',
+  'muslim',
+  'hindu',
+  'jewish',
+  'buddhist',
+  'catholic',
+  'protestant',
+  'traditional-african',
+  'atheist',
+  'agnostic',
+  'spiritual-not-religious',
+  'other',
+  'prefer-not-to-say',
+] as const
+
+// ─────────────────────────────────────────────
+// SHARED SUB-DOCUMENT TYPES
+// ─────────────────────────────────────────────
+
+export interface ICoordinates {
+  type: 'Point'
+  coordinates: [number, number] // [longitude, latitude] — GeoJSON
+}
+
+export interface ILocation {
+  city:        string
+  country:     string
+  countryCode: string // ISO 3166-1 alpha-2
+  coordinates: ICoordinates
+}
+
+export interface IPhoto {
+  publicId:   string // Cloudinary public_id
+  url:        string // Cloudinary secure_url (base, not signed)
+  isPrimary:  boolean
+  uploadedAt: Date
+}
+
+export interface IAgeRange {
+  min: number
+  max: number
+}
+
+export interface IIncomeRange {
+  min:      number
+  max:      number
+  currency: string
+}
