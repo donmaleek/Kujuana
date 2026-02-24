@@ -1,0 +1,20 @@
+packages/shared/
+├── src/
+│   ├── enums/
+│   │   ├── tiers.ts
+│   │   ├── lifestyle.ts
+│   │   ├── values.ts
+│   │   ├── relationshipTypes.ts
+│   │   └── emotionalReadiness.ts
+│   ├── types/
+│   │   ├── user.ts
+│   │   ├── profile.ts
+│   │   ├── subscription.ts
+│   │   ├── payment.ts
+│   │   └── match.ts
+│   └── validators/
+│       ├── auth.zod.ts
+│       ├── onboarding.zod.ts
+│       ├── profile.zod.ts
+│       └── payments.zod.ts
+└── package.json
