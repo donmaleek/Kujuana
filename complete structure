@@ -1,0 +1,342 @@
+kujuana/                                                # Kujuana v2 monorepo (single combined structure)
+├── apps/
+│   ├── api/                                             # Node + Express + TypeScript (REST)
+│   │   ├── src/
+│   │   │   ├── app.ts                                   # Express init, middleware stack
+│   │   │   ├── server.ts                                # HTTP boot, graceful shutdown, worker spin-up
+│   │   │   ├── config/
+│   │   │   │   ├── env.ts                               # Zod-validated env
+│   │   │   │   ├── db.ts                                # Mongo Atlas connection (Mongoose)
+│   │   │   │   ├── redis.ts                             # Upstash Redis client (BullMQ + rate limit)
+│   │   │   │   ├── cloudinary.ts                        # Cloudinary SDK + private folder config
+│   │   │   │   ├── bullmq.ts                            # Queue/Worker factories
+│   │   │   │   ├── encryption.ts                        # AES-256-GCM helpers (VIP sensitive fields)
+│   │   │   │   └── logger.ts                            # Pino logger
+│   │   │   ├── db/
+│   │   │   │   ├── indexes.ts                           # ensureIndexes() bootstrap
+│   │   │   │   ├── atlasSearch.indexes.json             # Atlas Search index definitions
+│   │   │   │   └── seed.ts                              # Seed enums/countries/religions, etc
+│   │   │   ├── models/                                  # Mongo collections (Mongoose models)
+│   │   │   │   ├── User.model.ts                        # Auth core: name/email/phone/passhash/roles
+│   │   │   │   ├── Profile.model.ts                     # All onboarding sections (basic/background/photos/vision/prefs)
+│   │   │   │   ├── Subscription.model.ts                # standard/priority/vip, credits, cycles, add-ons
+│   │   │   │   ├── Payment.model.ts                     # ledger + idempotency + gateway refs
+│   │   │   │   ├── Match.model.ts                       # match records + scoring breakdown + status
+│   │   │   │   ├── MatchRequest.model.ts                # priority instant queue requests
+│   │   │   │   ├── DeviceSession.model.ts               # refresh rotation + device binding
+│   │   │   │   └── AuditLog.model.ts                    # admin/matchmaker reads + sensitive actions
+│   │   │   ├── repositories/                            # data access (thin)
+│   │   │   │   ├── user.repo.ts
+│   │   │   │   ├── profile.repo.ts
+│   │   │   │   ├── subscription.repo.ts
+│   │   │   │   ├── payment.repo.ts
+│   │   │   │   ├── match.repo.ts
+│   │   │   │   └── matchRequest.repo.ts
+│   │   │   ├── controllers/                             # request handlers (thin)
+│   │   │   │   ├── auth.controller.ts                   # register/login/refresh/logout/verify
+│   │   │   │   ├── onboarding.controller.ts             # step-save 1..6, progress, submit
+│   │   │   │   ├── profile.controller.ts                # getMe/updateMe, completeness calc
+│   │   │   │   ├── matching.controller.ts               # matches list/get, request priority/vip
+│   │   │   │   ├── subscription.controller.ts           # me/upgrade/cancel/add-ons
+│   │   │   │   ├── payment.controller.ts                # initiate + webhooks
+│   │   │   │   ├── upload.controller.ts                 # sign upload + delete + reorder photos
+│   │   │   │   └── admin.controller.ts                  # queue/members/matches/audit
+│   │   │   ├── services/
+│   │   │   │   ├── auth/
+│   │   │   │   │   ├── auth.service.ts                  # login/register orchestration
+│   │   │   │   │   ├── jwt.service.ts                   # access+refresh issuance/verify/rotate
+│   │   │   │   │   ├── password.service.ts              # bcrypt hashing/verify
+│   │   │   │   │   └── otp.service.ts                   # email/phone verification tokens
+│   │   │   │   ├── matching/
+│   │   │   │   │   ├── matching.service.ts              # tier-aware orchestration
+│   │   │   │   │   ├── scoring.service.ts               # wraps packages/scoring
+│   │   │   │   │   ├── atlasSearch.service.ts           # candidate pool retrieval
+│   │   │   │   │   ├── vipFilter.service.ts             # strict filters + private fields access rules
+│   │   │   │   │   └── queue.service.ts                 # BullMQ jobs (standard/priority/vip)
+│   │   │   │   ├── payments/
+│   │   │   │   │   ├── payments.service.ts              # unified payment entrypoint
+│   │   │   │   │   ├── pesapal.gateway.ts               # Pesapal API adapter + signature verify
+│   │   │   │   │   ├── flutterwave.gateway.ts           # Flutterwave adapter + signature verify
+│   │   │   │   │   └── webhook.service.ts               # idempotency + crediting
+│   │   │   │   ├── media/
+│   │   │   │   │   ├── upload.service.ts                # Cloudinary signed upload (private folder)
+│   │   │   │   │   └── signedUrl.service.ts             # time-limited access URLs
+│   │   │   │   ├── email/
+│   │   │   │   │   ├── email.service.ts                 # Resend/Nodemailer wrapper
+│   │   │   │   │   └── templates/                       # verify, receipt, match intro
+│   │   │   │   ├── notifications/
+│   │   │   │   │   └── push.service.ts                  # Expo push token registration + send
+│   │   │   │   └── admin/
+│   │   │   │       ├── matchmaker.service.ts            # VIP curation + introduce + notes
+│   │   │   │       └── moderation.service.ts            # flags, suspensions, audit helpers
+│   │   │   ├── routes/
+│   │   │   │   ├── index.ts                             # /api/v1 mount
+│   │   │   │   ├── auth.routes.ts                       # /auth/*
+│   │   │   │   ├── onboarding.routes.ts                 # /onboarding/*
+│   │   │   │   ├── profile.routes.ts                    # /profile/*
+│   │   │   │   ├── matching.routes.ts                   # /matches/*, /matching/*
+│   │   │   │   ├── subscription.routes.ts               # /subscriptions/*
+│   │   │   │   ├── payment.routes.ts                    # /payments/*
+│   │   │   │   ├── upload.routes.ts                     # /upload/*
+│   │   │   │   └── admin.routes.ts                      # /admin/*
+│   │   │   ├── middleware/
+│   │   │   │   ├── auth.middleware.ts                   # access token verify, req.user
+│   │   │   │   ├── session.middleware.ts                # refresh rotation + device binding
+│   │   │   │   ├── tier.middleware.ts                   # requireTier(vip|priority|standard)
+│   │   │   │   ├── role.middleware.ts                   # requireRole(admin|matchmaker)
+│   │   │   │   ├── rateLimit.middleware.ts              # Redis sliding window
+│   │   │   │   ├── validate.middleware.ts               # Zod validate
+│   │   │   │   ├── privacy.middleware.ts                # strip/deny private fields, signed photo logic
+│   │   │   │   └── error.middleware.ts                  # global error handler
+│   │   │   ├── workers/                                 # BullMQ workers
+│   │   │   │   ├── standardMatch.worker.ts              # nightly batch job
+│   │   │   │   ├── priorityMatch.worker.ts              # instant one-match job
+│   │   │   │   └── vipCuration.worker.ts                # shortlist for matchmaker queue
+│   │   │   ├── jobs/                                    # repeatable schedules
+│   │   │   │   ├── matchCron.job.ts                     # 02:00 EAT standard matching
+│   │   │   │   └── subscriptionExpiry.job.ts            # reminders + expiries
+│   │   │   ├── utils/
+│   │   │   │   ├── ids.ts
+│   │   │   │   ├── pagination.ts                        # cursor-based
+│   │   │   │   ├── normalize.ts                         # E.164, country normalization
+│   │   │   │   ├── security.ts                          # timing-safe compare, etc
+│   │   │   │   └── crypto.ts                            # AES helpers for app-layer encryption
+│   │   │   └── types/
+│   │   │       └── express.d.ts                         # req.user augmentation
+│   │   ├── tests/
+│   │   │   ├── unit/
+│   │   │   │   ├── scoring.test.ts
+│   │   │   │   └── crypto.test.ts
+│   │   │   └── integration/
+│   │   │       ├── auth.test.ts
+│   │   │       ├── onboarding.test.ts
+│   │   │       ├── payments.test.ts
+│   │   │       └── matching.test.ts
+│   │   ├── Dockerfile
+│   │   ├── jest.config.ts
+│   │   ├── tsconfig.json
+│   │   └── package.json
+│   │
+│   ├── web/                                             # Next.js 14 (App Router) + TS + Tailwind + shadcn
+│   │   ├── app/
+│   │   │   ├── layout.tsx                               # root providers (Query/Auth), theme, globals
+│   │   │   ├── globals.css
+│   │   │   ├── (marketing)/
+│   │   │   │   ├── layout.tsx
+│   │   │   │   ├── page.tsx                             # Landing: Welcome to Kujuana
+│   │   │   │   └── pricing/page.tsx                     # Standard vs Priority vs VIP comparison
+│   │   │   ├── (auth)/
+│   │   │   │   ├── register/page.tsx                    # full name/email/phone/password
+│   │   │   │   ├── login/page.tsx
+│   │   │   │   ├── verify-email/page.tsx
+│   │   │   │   ├── forgot-password/page.tsx
+│   │   │   │   └── reset-password/page.tsx
+│   │   │   ├── (onboarding)/
+│   │   │   │   ├── layout.tsx                           # stepper shell, progress persistence
+│   │   │   │   ├── step/
+│   │   │   │   │   ├── 1-plan/page.tsx                  # plan selection + pricing
+│   │   │   │   │   ├── 2-basic-details/page.tsx         # gender/age/location/status/occupation
+│   │   │   │   │   ├── 3-background/page.tsx            # lifestyle/traits/children/readiness
+│   │   │   │   │   ├── 4-photos/page.tsx                # 3 private photos required
+│   │   │   │   │   ├── 5-relationship-vision/page.tsx   # type/values/ideal/lifeVision/non-negotiables
+│   │   │   │   │   ├── 6-preferences/page.tsx           # age range/countries/lifestyle/religion/international
+│   │   │   │   │   └── 7-review/page.tsx                # confirm + submit
+│   │   │   │   └── complete/page.tsx
+│   │   │   ├── (dashboard)/
+│   │   │   │   ├── layout.tsx                           # sidebar, subscription badge, guards
+│   │   │   │   ├── page.tsx                             # overview
+│   │   │   │   ├── matches/page.tsx                     # match inbox
+│   │   │   │   ├── matches/[id]/page.tsx                # match details
+│   │   │   │   ├── profile/page.tsx                     # edit profile (all sections)
+│   │   │   │   ├── subscription/page.tsx                # plan + billing
+│   │   │   │   └── settings/page.tsx                    # privacy, notifications, account
+│   │   │   ├── (admin)/
+│   │   │   │   ├── layout.tsx
+│   │   │   │   ├── dashboard/page.tsx                   # stats
+│   │   │   │   ├── queue/page.tsx                       # VIP + Priority tasks
+│   │   │   │   ├── members/page.tsx
+│   │   │   │   ├── members/[id]/page.tsx                # full member view (logged)
+│   │   │   │   ├── matches/[id]/page.tsx                # introduce + note
+│   │   │   │   └── audit/page.tsx
+│   │   │   └── api/
+│   │   │       └── health/route.ts                      # optional BFF utility
+│   │   ├── components/
+│   │   │   ├── ui/                                      # shadcn/ui primitives
+│   │   │   ├── onboarding/
+│   │   │   │   ├── Stepper.tsx
+│   │   │   │   ├── PlanCards.tsx
+│   │   │   │   ├── BasicDetailsForm.tsx
+│   │   │   │   ├── BackgroundForm.tsx
+│   │   │   │   ├── PhotosUploader.tsx                   # signed upload flow
+│   │   │   │   ├── RelationshipVisionForm.tsx
+│   │   │   │   ├── PreferencesForm.tsx                  # VIP add-ons conditionally shown
+│   │   │   │   └── ReviewSubmit.tsx
+│   │   │   ├── matches/
+│   │   │   │   ├── MatchCard.tsx                        # blurred photo until accepted (policy)
+│   │   │   │   ├── ScoreBreakdown.tsx
+│   │   │   │   └── MatchActions.tsx                     # accept/decline
+│   │   │   ├── billing/
+│   │   │   │   ├── PricingTable.tsx
+│   │   │   │   └── PaymentStatus.tsx
+│   │   │   └── shared/
+│   │   │       ├── Navbar.tsx
+│   │   │       ├── ProtectedRoute.tsx
+│   │   │       ├── PrivacyBanner.tsx                    # "Private & Confidential" cue
+│   │   │       └── PaymentModal.tsx                     # STK/checkout UX
+│   │   ├── lib/
+│   │   │   ├── api-client.ts                            # fetch wrapper + interceptors
+│   │   │   ├── auth.ts                                  # cookie-based auth helpers
+│   │   │   ├── validators.ts                            # re-export from packages/shared
+│   │   │   ├── queryClient.ts                           # TanStack Query config
+│   │   │   └── utils.ts
+│   │   ├── store/
+│   │   │   ├── auth.store.ts                            # zustand
+│   │   │   ├── onboarding.store.ts
+│   │   │   └── profile.store.ts
+│   │   ├── hooks/
+│   │   │   ├── useProfile.ts
+│   │   │   ├── useMatches.ts
+│   │   │   ├── useSubscription.ts
+│   │   │   └── usePayment.ts
+│   │   ├── middleware.ts                               # Next edge guards (auth + onboarding + role)
+│   │   ├── next.config.ts
+│   │   ├── tailwind.config.ts
+│   │   ├── tsconfig.json
+│   │   └── package.json
+│   │
+│   └── mobile/                                          # React Native + Expo + TS (Expo Router)
+│       ├── app/
+│       │   ├── _layout.tsx                              # root providers (Query/Auth)
+│       │   ├── (auth)/
+│       │   │   ├── _layout.tsx
+│       │   │   ├── index.tsx                            # Welcome: Sign Up / Log In / Tiers
+│       │   │   ├── register.tsx
+│       │   │   ├── login.tsx
+│       │   │   └── forgot-password.tsx
+│       │   ├── (onboarding)/
+│       │   │   ├── _layout.tsx
+│       │   │   ├── plan.tsx
+│       │   │   ├── basic-details.tsx
+│       │   │   ├── background.tsx
+│       │   │   ├── photos.tsx                           # camera/gallery picker, 3-photo requirement
+│       │   │   ├── relationship-vision.tsx
+│       │   │   ├── preferences.tsx
+│       │   │   └── review.tsx
+│       │   ├── (tabs)/
+│       │   │   ├── _layout.tsx                          # Matches/Profile/Upgrade/Settings
+│       │   │   ├── matches.tsx
+│       │   │   ├── profile.tsx
+│       │   │   ├── upgrade.tsx                          # payments UX (STK/checkout)
+│       │   │   └── settings.tsx
+│       │   └── match/[id].tsx                           # match detail screen
+│       ├── components/
+│       │   ├── onboarding/
+│       │   │   ├── PlanCard.tsx
+│       │   │   ├── StepProgress.tsx
+│       │   │   ├── PhotoPicker.tsx                      # expo-image-picker + signed upload
+│       │   │   └── MultiSelect.tsx
+│       │   ├── matches/
+│       │   │   ├── MatchCard.tsx
+│       │   │   └── MatchDetailSheet.tsx
+│       │   └── shared/
+│       │       ├── Button.tsx
+│       │       ├── Input.tsx
+│       │       └── MpesaModal.tsx
+│       ├── lib/
+│       │   ├── api.ts                                   # axios/fetch, SecureStore tokens
+│       │   └── notifications.ts                          # Expo push token registration
+│       ├── store/
+│       │   ├── auth.store.ts
+│       │   └── onboarding.store.ts
+│       ├── app.json                                     # Expo config: permissions, ids
+│       ├── eas.json                                     # build profiles
+│       ├── tsconfig.json
+│       └── package.json
+│
+├── packages/
+│   ├── shared/                                          # single source of truth: enums/types/zod
+│   │   ├── src/
+│   │   │   ├── enums/
+│   │   │   │   ├── tiers.ts                             # Standard/Priority/VIP config + add-ons
+│   │   │   │   ├── lifestyle.ts
+│   │   │   │   ├── values.ts
+│   │   │   │   ├── relationshipTypes.ts
+│   │   │   │   └── emotionalReadiness.ts
+│   │   │   ├── types/
+│   │   │   │   ├── user.ts
+│   │   │   │   ├── profile.ts
+│   │   │   │   ├── subscription.ts
+│   │   │   │   ├── payment.ts
+│   │   │   │   └── match.ts
+│   │   │   ├── schemas/
+│   │   │   │   ├── auth.schema.ts                       # register/login/verify
+│   │   │   │   ├── onboarding.schema.ts                 # step payloads 1..7
+│   │   │   │   ├── profile.schema.ts
+│   │   │   │   └── payment.schema.ts
+│   │   │   ├── constants/
+│   │   │   │   ├── countries.ts                         # ISO 3166, Africa-first curated list
+│   │   │   │   ├── religions.ts
+│   │   │   │   └── occupations.ts                       # optional
+│   │   │   └── utils/
+│   │   │       ├── formatCurrency.ts
+│   │   │       └── normalizePhone.ts
+│   │   ├── tsconfig.json
+│   │   └── package.json
+│   │
+│   ├── scoring/                                         # pure matching math (no IO)
+│   │   ├── src/
+│   │   │   ├── computeCompatibility.ts                   # weighted scoring (0..100)
+│   │   │   ├── hardFilters.ts                            # non-negotiables, age, geo, religion
+│   │   │   ├── helpers.ts                                # set overlap, jaccard, normalization
+│   │   │   └── index.ts
+│   │   ├── tsconfig.json
+│   │   └── package.json
+│   │
+│   ├── config/                                          # shared tooling config
+│   │   ├── eslint/
+│   │   │   └── index.js
+│   │   ├── prettier/
+│   │   │   └── index.cjs
+│   │   ├── tsconfig/
+│   │   │   └── base.json
+│   │   └── package.json
+│   │
+│   └── ui/                                              # optional shared UI lib (web + mobile-web)
+│       ├── src/
+│       │   ├── components/
+│       │   └── index.ts
+│       ├── tsconfig.json
+│       └── package.json
+│
+├── infra/
+│   ├── docker/
+│   │   ├── docker-compose.yml                           # local redis + optional mongo
+│   │   └── redis.conf
+│   └── scripts/
+│       ├── seed.ts                                      # calls apps/api/src/db/seed.ts
+│       ├── ensure-indexes.ts                            # calls apps/api/src/db/indexes.ts
+│       ├── reindex-atlas-search.ts                      # updates Atlas Search mapping (manual)
+│       └── export-audit.ts                              # compliance exports
+│
+├── docs/
+│   ├── architecture.md                                  # high-level system description
+│   ├── api.md                                           # endpoint spec (auth/onboarding/matching/payments)
+│   ├── onboarding-flow.md                               # step rules + completeness scoring rules
+│   ├── data-dictionary.md                               # fields, privacy class, tier gating
+│   ├── security.md                                      # photo privacy, encryption, audit policy
+│   └── runbooks/
+│       ├── payments-webhooks.md
+│       └── incident-response.md
+│
+├── .github/
+│   └── workflows/
+│       ├── api.yml                                      # lint/test/build/deploy api
+│       ├── web.yml                                      # lint/typecheck/build/deploy web
+│       └── mobile.yml                                   # EAS build/submit
+│
+├── .env.example                                         # root env template (shared across apps)
+├── package.json                                         # root scripts (pnpm -r)
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+├── turbo.json                                           # turborepo pipeline
+└── README.md
