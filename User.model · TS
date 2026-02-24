@@ -1,0 +1,279 @@
+/**
+ * User Model
+ * ──────────
+ * Handles authentication credentials, roles, and token lifecycle.
+ * Intentionally thin — profile data lives in Profile model (1:1 via userId).
+ *
+ * Indexes:
+ *   email        — unique
+ *   phone        — unique, sparse (not all users set phone at register)
+ *   role         — for admin/matchmaker queries
+ */
+
+import mongoose, {
+  Document,
+  Model,
+  Schema,
+  Types,
+  CallbackError,
+} from 'mongoose'
+import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
+import { UserRole } from '../types/index.js'
+
+// ─────────────────────────────────────────────
+// INTERFACE
+// ─────────────────────────────────────────────
+
+export interface IUser extends Document {
+  _id:                    Types.ObjectId
+  fullName:               string
+  email:                  string
+  phone:                  string
+  passwordHash:           string
+  isEmailVerified:        boolean
+  role:                   UserRole
+
+  // Token management
+  refreshTokens:          string[]       // hashed refresh tokens, max 5
+
+  // Email verification
+  emailVerifyToken?:      string         // hashed
+  emailVerifyExpiry?:     Date
+
+  // Password reset
+  passwordResetToken?:    string         // hashed
+  passwordResetExpiry?:   Date
+
+  // Account state
+  isActive:               boolean        // false = soft-deleted or banned
+  isSuspended:            boolean
+  suspendedReason?:       string
+  lastLoginAt?:           Date
+  loginAttempts:          number         // for brute-force protection
+  lockUntil?:             Date           // account lock after 5 failed attempts
+
+  createdAt:              Date
+  updatedAt:              Date
+
+  // ── Instance Methods ──
+  comparePassword(plain: string): Promise<boolean>
+  generateEmailVerifyToken(): string     // returns raw token (store hashed)
+  generatePasswordResetToken(): string   // returns raw token (store hashed)
+  isLocked(): boolean
+}
+
+interface IUserModel extends Model<IUser> {
+  findByEmail(email: string): Promise<IUser | null>
+}
+
+// ─────────────────────────────────────────────
+// SCHEMA
+// ─────────────────────────────────────────────
+
+const userSchema = new Schema<IUser, IUserModel>(
+  {
+    fullName: {
+      type:     String,
+      required: [true, 'Full name is required'],
+      trim:     true,
+      minlength: [2,   'Full name must be at least 2 characters'],
+      maxlength: [100, 'Full name cannot exceed 100 characters'],
+    },
+
+    email: {
+      type:      String,
+      required:  [true, 'Email is required'],
+      unique:    true,
+      lowercase: true,
+      trim:      true,
+      match: [
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        'Please provide a valid email address',
+      ],
+    },
+
+    phone: {
+      type:   String,
+      trim:   true,
+      sparse: true,
+      // E.164 format: +254712345678
+      match: [/^\+[1-9]\d{7,14}$/, 'Phone must be in E.164 format (+254...)'],
+    },
+
+    passwordHash: {
+      type:     String,
+      required: [true, 'Password is required'],
+      select:   false, // never returned in queries unless explicitly .select('+passwordHash')
+    },
+
+    isEmailVerified: {
+      type:    Boolean,
+      default: false,
+    },
+
+    role: {
+      type:    String,
+      enum:    Object.values(UserRole),
+      default: UserRole.User,
+    },
+
+    // ── Tokens ──────────────────────────────
+
+    refreshTokens: {
+      type:    [String],
+      default: [],
+      select:  false,
+    },
+
+    emailVerifyToken: {
+      type:   String,
+      select: false,
+    },
+
+    emailVerifyExpiry: {
+      type:   Date,
+      select: false,
+    },
+
+    passwordResetToken: {
+      type:   String,
+      select: false,
+    },
+
+    passwordResetExpiry: {
+      type:   Date,
+      select: false,
+    },
+
+    // ── Account State ────────────────────────
+
+    isActive: {
+      type:    Boolean,
+      default: true,
+    },
+
+    isSuspended: {
+      type:    Boolean,
+      default: false,
+    },
+
+    suspendedReason: {
+      type: String,
+    },
+
+    lastLoginAt: {
+      type: Date,
+    },
+
+    loginAttempts: {
+      type:    Number,
+      default: 0,
+      select:  false,
+    },
+
+    lockUntil: {
+      type:   Date,
+      select: false,
+    },
+  },
+  {
+    timestamps: true, // createdAt, updatedAt
+    versionKey: false,
+  }
+)
+
+// ─────────────────────────────────────────────
+// INDEXES
+// ─────────────────────────────────────────────
+
+userSchema.index({ email: 1 }, { unique: true })
+userSchema.index({ phone: 1 }, { unique: true, sparse: true })
+userSchema.index({ role: 1 })
+userSchema.index({ createdAt: -1 })
+userSchema.index({ isActive: 1, isSuspended: 1 })
+
+// ─────────────────────────────────────────────
+// PRE-SAVE HOOKS
+// ─────────────────────────────────────────────
+
+// Hash password before save
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('passwordHash')) return next()
+
+  try {
+    const salt      = await bcrypt.genSalt(12)
+    this.passwordHash = await bcrypt.hash(this.passwordHash, salt)
+    next()
+  } catch (err) {
+    next(err as CallbackError)
+  }
+})
+
+// Cap refreshTokens array to 5 (oldest evicted first)
+userSchema.pre('save', function (next) {
+  if (this.refreshTokens.length > 5) {
+    this.refreshTokens = this.refreshTokens.slice(-5)
+  }
+  next()
+})
+
+// ─────────────────────────────────────────────
+// INSTANCE METHODS
+// ─────────────────────────────────────────────
+
+userSchema.methods.comparePassword = async function (
+  plain: string
+): Promise<boolean> {
+  return bcrypt.compare(plain, this.passwordHash)
+}
+
+userSchema.methods.generateEmailVerifyToken = function (): string {
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  this.emailVerifyToken  = crypto.createHash('sha256').update(rawToken).digest('hex')
+  this.emailVerifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+  return rawToken
+}
+
+userSchema.methods.generatePasswordResetToken = function (): string {
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  this.passwordResetToken  = crypto.createHash('sha256').update(rawToken).digest('hex')
+  this.passwordResetExpiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+  return rawToken
+}
+
+userSchema.methods.isLocked = function (): boolean {
+  return !!(this.lockUntil && this.lockUntil > new Date())
+}
+
+// ─────────────────────────────────────────────
+// STATIC METHODS
+// ─────────────────────────────────────────────
+
+userSchema.statics.findByEmail = function (email: string) {
+  return this.findOne({ email: email.toLowerCase().trim() })
+}
+
+// ─────────────────────────────────────────────
+// TRANSFORM (strip sensitive fields from toJSON)
+// ─────────────────────────────────────────────
+
+userSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    delete ret.passwordHash
+    delete ret.refreshTokens
+    delete ret.emailVerifyToken
+    delete ret.emailVerifyExpiry
+    delete ret.passwordResetToken
+    delete ret.passwordResetExpiry
+    delete ret.loginAttempts
+    delete ret.lockUntil
+    return ret
+  },
+})
+
+// ─────────────────────────────────────────────
+// MODEL
+// ─────────────────────────────────────────────
+
+export const User = mongoose.model<IUser, IUserModel>('User', userSchema)
