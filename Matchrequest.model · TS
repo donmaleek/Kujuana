@@ -1,0 +1,170 @@
+/**
+ * MatchRequest Model
+ * ──────────────────
+ * Tracks the lifecycle of an individual match request from dispatch
+ * through to Match creation. Primarily used for Priority tier to:
+ *   - Prevent double-processing if a BullMQ job is retried
+ *   - Audit trail for credit deductions
+ *   - Debugging stuck or failed jobs
+ *
+ * Standard tier matches are created directly by the nightly cron
+ * worker without going through this model (batch creation).
+ *
+ * VIP: one MatchRequest per monthly cycle per user — status shows
+ * where in the matchmaker workflow the user currently sits.
+ */
+
+import mongoose, { Document, Schema, Types } from 'mongoose'
+import { SubscriptionTier } from '../types/index.js'
+
+// ─────────────────────────────────────────────
+// INTERFACE
+// ─────────────────────────────────────────────
+
+export type MatchRequestStatus =
+  | 'queued'       // BullMQ job created, not yet picked up
+  | 'processing'   // Worker is actively running
+  | 'completed'    // Match record created successfully
+  | 'failed'       // All retries exhausted — credit NOT deducted
+  | 'cancelled'    // User cancelled before processing (credit refunded)
+  | 'no_candidates' // Algorithm found no eligible candidates
+
+export interface IMatchRequest extends Document {
+  _id:         Types.ObjectId
+  userId:      Types.ObjectId   // ref: User — who requested the match
+  paymentId?:  Types.ObjectId   // ref: Payment — priority payment that funded this
+  matchId?:    Types.ObjectId   // ref: Match — created match (set on completion)
+
+  tier:        SubscriptionTier
+  status:      MatchRequestStatus
+
+  // BullMQ tracking
+  bullJobId?:  string           // BullMQ job ID for status lookup
+  queueName:   string           // e.g. 'priority-matching', 'vip-matching'
+
+  // Processing metadata
+  candidatesConsidered?: number // how many profiles were evaluated
+  candidatesFiltered?:   number // how many passed non-negotiables
+  topScore?:             number // highest compatibility score found
+
+  // Retry tracking
+  attempts:    number
+  maxAttempts: number
+  lastError?:  string
+
+  // Timing
+  queuedAt:    Date
+  startedAt?:  Date
+  completedAt?: Date
+
+  createdAt:   Date
+  updatedAt:   Date
+}
+
+// ─────────────────────────────────────────────
+// SCHEMA
+// ─────────────────────────────────────────────
+
+const matchRequestSchema = new Schema<IMatchRequest>(
+  {
+    userId: {
+      type:     Schema.Types.ObjectId,
+      ref:      'User',
+      required: true,
+    },
+
+    paymentId: {
+      type: Schema.Types.ObjectId,
+      ref:  'Payment',
+    },
+
+    matchId: {
+      type: Schema.Types.ObjectId,
+      ref:  'Match',
+    },
+
+    tier: {
+      type:     String,
+      enum:     Object.values(SubscriptionTier),
+      required: true,
+    },
+
+    status: {
+      type:    String,
+      enum:    ['queued', 'processing', 'completed', 'failed', 'cancelled', 'no_candidates'],
+      default: 'queued',
+    },
+
+    bullJobId: {
+      type: String,
+    },
+
+    queueName: {
+      type:    String,
+      default: 'standard-matching',
+    },
+
+    candidatesConsidered: {
+      type: Number,
+    },
+
+    candidatesFiltered: {
+      type: Number,
+    },
+
+    topScore: {
+      type: Number,
+      min:  0,
+      max:  100,
+    },
+
+    attempts: {
+      type:    Number,
+      default: 0,
+    },
+
+    maxAttempts: {
+      type:    Number,
+      default: 3,
+    },
+
+    lastError: {
+      type: String,
+    },
+
+    queuedAt: {
+      type:    Date,
+      default: Date.now,
+    },
+
+    startedAt: {
+      type: Date,
+    },
+
+    completedAt: {
+      type: Date,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+)
+
+// ─────────────────────────────────────────────
+// INDEXES
+// ─────────────────────────────────────────────
+
+matchRequestSchema.index({ userId: 1, status: 1 })
+matchRequestSchema.index({ status: 1, tier: 1 })
+matchRequestSchema.index({ bullJobId: 1 }, { sparse: true })
+matchRequestSchema.index({ createdAt: -1 })
+
+// ─────────────────────────────────────────────
+// MODEL
+// ─────────────────────────────────────────────
+
+export const MatchRequest = mongoose.model<IMatchRequest>(
+  'MatchRequest',
+  matchRequestSchema
+)
