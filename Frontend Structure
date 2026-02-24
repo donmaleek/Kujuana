@@ -1,0 +1,72 @@
+apps/web/
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx                      # Landing + "Welcome to Kujuana"
+│   ├── (auth)/
+│   │   ├── login/page.tsx
+│   │   ├── register/page.tsx
+│   │   └── verify/page.tsx
+│   ├── (onboarding)/
+│   │   ├── layout.tsx                # stepper + progress
+│   │   ├── plan/page.tsx             # Standard/Priority/VIP selection
+│   │   ├── basic-details/page.tsx
+│   │   ├── background/page.tsx
+│   │   ├── photos/page.tsx
+│   │   ├── relationship-vision/page.tsx
+│   │   ├── preferences/page.tsx
+│   │   └── review/page.tsx
+│   ├── (dashboard)/
+│   │   ├── layout.tsx
+│   │   ├── matches/page.tsx
+│   │   ├── profile/page.tsx
+│   │   ├── billing/page.tsx
+│   │   └── settings/page.tsx
+│   ├── (admin)/
+│   │   ├── layout.tsx
+│   │   ├── queue/page.tsx
+│   │   ├── members/page.tsx
+│   │   ├── matches/page.tsx
+│   │   └── audit/page.tsx
+│   └── api/                          # Optional BFF endpoints (token cookies etc)
+│       └── health/route.ts
+├── components/
+│   ├── ui/                           # shadcn/ui
+│   ├── onboarding/
+│   │   ├── Stepper.tsx
+│   │   ├── PlanCards.tsx
+│   │   ├── BasicDetailsForm.tsx
+│   │   ├── BackgroundForm.tsx
+│   │   ├── PhotosUploader.tsx
+│   │   ├── RelationshipVisionForm.tsx
+│   │   ├── PreferencesForm.tsx
+│   │   └── ReviewSubmit.tsx
+│   ├── matches/
+│   │   ├── MatchCard.tsx
+│   │   ├── ScoreBreakdown.tsx
+│   │   └── MatchActions.tsx
+│   ├── billing/
+│   │   ├── PricingTable.tsx
+│   │   └── PaymentStatus.tsx
+│   └── shared/
+│       ├── Navbar.tsx
+│       ├── ProtectedRoute.tsx
+│       └── PrivacyBanner.tsx
+├── lib/
+│   ├── api-client.ts                 # fetch wrapper + interceptors
+│   ├── auth.ts                       # token handling (prefer httpOnly cookies)
+│   ├── validators.ts                 # re-export from packages/shared
+│   └── utils.ts
+├── store/
+│   ├── auth.store.ts                 # zustand
+│   ├── onboarding.store.ts
+│   └── profile.store.ts
+├── hooks/
+│   ├── useProfile.ts                 # react-query
+│   ├── useMatches.ts
+│   └── useSubscription.ts
+├── styles/
+│   └── globals.css
+├── middleware.ts                     # route protection + onboarding gate
+├── next.config.ts
+├── tailwind.config.ts
+└── tsconfig.json
