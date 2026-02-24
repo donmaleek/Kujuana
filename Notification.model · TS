@@ -1,0 +1,105 @@
+/**
+ * Notification Model
+ * ──────────────────
+ * Tracks all outbound notifications (push + email) for audit,
+ * deduplication, and user-facing notification inbox.
+ *
+ * Push notifications use Expo Push API.
+ * Email notifications use Resend.
+ */
+
+import mongoose, { Document, Schema, Types } from 'mongoose'
+
+export type NotificationChannel = 'push' | 'email' | 'both'
+export type NotificationStatus  = 'pending' | 'sent' | 'failed' | 'read'
+
+export type NotificationType =
+  | 'match_new'           // New match introduced
+  | 'match_accepted'      // Your match accepted
+  | 'match_declined'      // Your match declined
+  | 'payment_success'     // Payment completed
+  | 'payment_failed'      // Payment failed
+  | 'subscription_expiry' // VIP expiring soon
+  | 'welcome'             // Account created
+  | 'email_verified'      // Email verification
+  | 'profile_incomplete'  // Nudge to complete profile
+
+export interface INotification extends Document {
+  _id:     Types.ObjectId
+  userId:  Types.ObjectId   // ref: User
+
+  type:    NotificationType
+  channel: NotificationChannel
+  status:  NotificationStatus
+
+  title:   string
+  body:    string
+  data?:   Record<string, unknown>   // deep link payload for push
+
+  // Push
+  expoPushToken?: string
+  pushTicketId?:  string            // Expo ticket ID for receipt check
+  pushReceiptId?: string
+
+  // Email
+  toEmail?:       string
+  resendMessageId?: string
+
+  // Reference
+  relatedMatchId?:    Types.ObjectId
+  relatedPaymentId?:  Types.ObjectId
+
+  readAt?: Date
+  sentAt?: Date
+
+  createdAt: Date
+  updatedAt: Date
+}
+
+const notificationSchema = new Schema<INotification>(
+  {
+    userId: {
+      type:     Schema.Types.ObjectId,
+      ref:      'User',
+      required: true,
+    },
+
+    type:    { type: String, required: true },
+    channel: { type: String, enum: ['push', 'email', 'both'], required: true },
+    status:  { type: String, enum: ['pending', 'sent', 'failed', 'read'], default: 'pending' },
+    title:   { type: String, required: true },
+    body:    { type: String, required: true },
+    data:    { type: Schema.Types.Mixed },
+
+    expoPushToken:    { type: String },
+    pushTicketId:     { type: String },
+    pushReceiptId:    { type: String },
+
+    toEmail:          { type: String },
+    resendMessageId:  { type: String },
+
+    relatedMatchId:   { type: Schema.Types.ObjectId, ref: 'Match' },
+    relatedPaymentId: { type: Schema.Types.ObjectId, ref: 'Payment' },
+
+    readAt: { type: Date },
+    sentAt: { type: Date },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+)
+
+notificationSchema.index({ userId: 1, status: 1 })
+notificationSchema.index({ userId: 1, createdAt: -1 })
+notificationSchema.index({ status: 1, type: 1 })
+// TTL — auto-delete read notifications after 90 days
+notificationSchema.index(
+  { readAt: 1 },
+  { expireAfterSeconds: 90 * 24 * 60 * 60, sparse: true }
+)
+
+export const Notification = mongoose.model<INotification>(
+  'Notification',
+  notificationSchema
+)
