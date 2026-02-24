@@ -1,0 +1,101 @@
+apps/api/
+├── src/
+│   ├── app.ts                       # Express app init
+│   ├── server.ts                    # http server boot
+│   ├── config/
+│   │   ├── env.ts                   # zod env validation
+│   │   ├── db.ts                    # mongoose connect + hooks
+│   │   ├── redis.ts                 # upstash client
+│   │   ├── cloudinary.ts            # cloudinary config + helpers
+│   │   ├── encryption.ts            # field encryption helpers (VIP secrets)
+│   │   └── logger.ts                # pino logger
+│   ├── db/
+│   │   ├── indexes.ts               # ensureIndexes() for Atlas indexes
+│   │   ├── search.ts                # Atlas Search index definitions (JSON)
+│   │   └── seed.ts                  # seed enums, countries, etc
+│   ├── models/
+│   │   ├── User.model.ts
+│   │   ├── Profile.model.ts
+│   │   ├── Subscription.model.ts
+│   │   ├── Payment.model.ts
+│   │   ├── Match.model.ts
+│   │   ├── MatchRequest.model.ts    # priority queue requests
+│   │   ├── AuditLog.model.ts        # security + compliance
+│   │   └── DeviceSession.model.ts   # refresh token rotation + device tracking
+│   ├── repositories/
+│   │   ├── user.repo.ts
+│   │   ├── profile.repo.ts
+│   │   ├── subscription.repo.ts
+│   │   ├── payment.repo.ts
+│   │   ├── match.repo.ts
+│   │   └── matchRequest.repo.ts
+│   ├── controllers/
+│   │   ├── auth.controller.ts
+│   │   ├── onboarding.controller.ts # multi-step profile completion
+│   │   ├── profile.controller.ts
+│   │   ├── matching.controller.ts
+│   │   ├── subscription.controller.ts
+│   │   ├── payment.controller.ts
+│   │   ├── upload.controller.ts
+│   │   └── admin.controller.ts
+│   ├── services/
+│   │   ├── auth/
+│   │   │   ├── auth.service.ts
+│   │   │   ├── jwt.service.ts
+│   │   │   ├── password.service.ts
+│   │   │   └── otp.service.ts       # email/phone verification
+│   │   ├── matching/
+│   │   │   ├── matching.service.ts  # orchestration (tier-aware)
+│   │   │   ├── scoring.service.ts   # uses packages/scoring
+│   │   │   ├── atlasSearch.service.ts
+│   │   │   ├── vipFilter.service.ts # strict filters, private fields
+│   │   │   └── queue.service.ts     # bullmq jobs
+│   │   ├── payments/
+│   │   │   ├── payments.service.ts
+│   │   │   ├── pesapal.gateway.ts
+│   │   │   ├── flutterwave.gateway.ts
+│   │   │   └── webhook.service.ts   # idempotency + signature verify
+│   │   ├── media/
+│   │   │   ├── upload.service.ts    # signed uploads + private folder logic
+│   │   │   └── signedUrl.service.ts # time-limited access URLs
+│   │   ├── email/
+│   │   │   ├── email.service.ts
+│   │   │   └── templates/           # verify, receipt, match intro
+│   │   └── admin/
+│   │       ├── moderation.service.ts
+│   │       └── matchmaker.service.ts
+│   ├── routes/
+│   │   ├── auth.routes.ts
+│   │   ├── onboarding.routes.ts
+│   │   ├── profile.routes.ts
+│   │   ├── matching.routes.ts
+│   │   ├── subscription.routes.ts
+│   │   ├── payment.routes.ts
+│   │   ├── upload.routes.ts
+│   │   └── admin.routes.ts
+│   ├── middleware/
+│   │   ├── auth.middleware.ts        # access token verify
+│   │   ├── session.middleware.ts     # refresh rotation + device binding
+│   │   ├── tier.middleware.ts        # VIP/Priority gating
+│   │   ├── rateLimit.middleware.ts   # redis-backed
+│   │   ├── validate.middleware.ts    # zod validate body/query/params
+│   │   ├── privacy.middleware.ts     # blocks access to private fields/photos
+│   │   └── error.middleware.ts
+│   ├── jobs/
+│   │   ├── standardNightly.job.ts    # nightly standard matching batch
+│   │   ├── priorityInstant.job.ts    # instant match job
+│   │   └── vipCuration.job.ts        # surfaces candidates for matchmaker
+│   ├── utils/
+│   │   ├── ids.ts
+│   │   ├── pagination.ts
+│   │   ├── normalize.ts              # phone E.164, country normalize
+│   │   └── security.ts               # timing-safe compares, etc
+│   └── types/
+│       └── express.d.ts              # req.user augmentation
+├── tests/
+│   ├── unit/
+│   └── integration/
+├── Dockerfile
+├── jest.config.ts
+├── tsconfig.json
+└── .env
