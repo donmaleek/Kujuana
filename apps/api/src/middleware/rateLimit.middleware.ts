@@ -11,6 +11,9 @@ interface RateLimitOptions {
   failOpen?: boolean;
 }
 
+const REDIS_OPERATION_TIMEOUT_MS = 350;
+const FAIL_OPEN_COOLDOWN_MS = 60_000;
+
 function getClientIp(req: Request): string {
   if (req.ip) return req.ip;
   const forwarded = req.headers['x-forwarded-for'];
@@ -24,10 +27,33 @@ function normalizeKeyPart(part: string): string {
   return part.toLowerCase().replace(/[^a-z0-9:_.-]/g, '').slice(0, 120) || 'unknown';
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Rate limiter timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+  });
+}
+
 function createRateLimitMiddleware(options: RateLimitOptions) {
   const failOpen = options.failOpen ?? true;
+  let disabledUntil = 0;
 
   return async function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
+    if (failOpen && Date.now() < disabledUntil) {
+      return next();
+    }
+
     const identity = options.keyGenerator ? options.keyGenerator(req) : getClientIp(req);
     const key = `rate:${options.keyPrefix}:${normalizeKeyPart(identity)}`;
     const now = Date.now();
@@ -35,8 +61,13 @@ function createRateLimitMiddleware(options: RateLimitOptions) {
 
     try {
       // Sliding window using Upstash Redis sorted set.
-      await redis.zremrangebyscore(key, 0, windowStart);
-      const count = await redis.zcard(key);
+      const count = await withTimeout(
+        (async () => {
+          await redis.zremrangebyscore(key, 0, windowStart);
+          return redis.zcard(key);
+        })(),
+        REDIS_OPERATION_TIMEOUT_MS,
+      );
 
       const resetSeconds = Math.ceil((now + options.windowMs) / 1000);
       res.setHeader('X-RateLimit-Limit', options.maxRequests.toString());
@@ -48,13 +79,21 @@ function createRateLimitMiddleware(options: RateLimitOptions) {
         return next(new AppError('Too many requests', 429, 'RATE_LIMITED'));
       }
 
-      await redis.zadd(key, { score: now, member: `${now}-${Math.random()}` });
-      await redis.expire(key, Math.ceil(options.windowMs / 1000) + 60);
+      await withTimeout(
+        Promise.all([
+          redis.zadd(key, { score: now, member: `${now}-${Math.random()}` }),
+          redis.expire(key, Math.ceil(options.windowMs / 1000) + 60),
+        ]),
+        REDIS_OPERATION_TIMEOUT_MS,
+      );
 
       const remaining = Math.max(0, options.maxRequests - (count + 1));
       res.setHeader('X-RateLimit-Remaining', remaining.toString());
       return next();
     } catch (err) {
+      if (failOpen) {
+        disabledUntil = Date.now() + FAIL_OPEN_COOLDOWN_MS;
+      }
       logger.warn({ err, keyPrefix: options.keyPrefix }, 'Rate limiter unavailable');
       if (failOpen) return next();
       return next(new AppError('Rate limiting unavailable', 503, 'RATE_LIMIT_UNAVAILABLE'));
