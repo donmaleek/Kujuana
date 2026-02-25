@@ -77,16 +77,30 @@ function computeLifestyleScore(a: CandidateSnapshot, b: CandidateSnapshot): numb
   let score = 0;
   let checks = 0;
 
-  // Smoking match
+  // Marital status compatibility
   score += a.basic.maritalStatus === b.basic.maritalStatus ? 100 : 50;
   checks++;
 
   // Personality trait overlap
   const traitSimilarity = jaccardSimilarity(
-    'personalityTraits' in a.basic ? [] : [],
-    'personalityTraits' in b.basic ? [] : [],
+    a.background.personalityTraits as unknown as string[],
+    b.background.personalityTraits as unknown as string[],
   );
   score += traitSimilarity * 100;
+  checks++;
+
+  // Wants-children alignment
+  const wantsChildrenMatch =
+    (a.background.wantsChildren as unknown as string) ===
+    (b.background.wantsChildren as unknown as string);
+  score += wantsChildrenMatch ? 100 : 30;
+  checks++;
+
+  // Smoking alignment
+  const smokingMatch =
+    (a.background.smoking as unknown as string) ===
+    (b.background.smoking as unknown as string);
+  score += smokingMatch ? 100 : 40;
   checks++;
 
   return checks > 0 ? score / checks : 0;

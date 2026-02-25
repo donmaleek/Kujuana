@@ -1,7 +1,13 @@
-import type { IProfileBasic, IProfilePreferences, IProfileRelationshipVision } from '@kujuana/shared';
+import type {
+  IProfileBackground,
+  IProfileBasic,
+  IProfilePreferences,
+  IProfileRelationshipVision,
+} from '@kujuana/shared';
 
 export interface CandidateSnapshot {
   basic: IProfileBasic;
+  background: IProfileBackground;
   preferences: IProfilePreferences;
   vision: IProfileRelationshipVision;
 }
@@ -36,17 +42,19 @@ export function passesHardFilters(
   }
 
   // Religion preference
+  const religions = preferences.religions ?? [];
   if (
-    preferences.religions.length > 0 &&
-    !preferences.religions.includes(candidate.basic.religion)
+    religions.length > 0 &&
+    !religions.includes(candidate.basic.religion)
   ) {
     return false;
   }
 
   // Marital status preference
+  const maritalStatuses = preferences.maritalStatuses ?? [];
   if (
-    preferences.maritalStatuses.length > 0 &&
-    !preferences.maritalStatuses.includes(candidate.basic.maritalStatus)
+    maritalStatuses.length > 0 &&
+    !maritalStatuses.includes(candidate.basic.maritalStatus)
   ) {
     return false;
   }
