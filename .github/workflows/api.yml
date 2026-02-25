@@ -1,0 +1,24 @@
+name: API CI
+on:
+  push:
+    paths:
+      - 'apps/api/**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Lint
+        run: pnpm lint --filter api
+      - name: Test
+        run: pnpm test --filter api
+      - name: Build
+        run: pnpm build --filter api
+      - name: Deploy
+        run: echo 'Deploy step here'

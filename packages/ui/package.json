@@ -1,0 +1,21 @@
+{
+  "name": "@kujuana/ui",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@kujuana/config": "workspace:*",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3"
+  }
+}

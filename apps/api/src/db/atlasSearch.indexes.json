@@ -1,0 +1,22 @@
+[
+  {
+    "name": "profile_search",
+    "definition": {
+      "mappings": {
+        "dynamic": false,
+        "fields": {
+          "basic.gender": { "type": "string" },
+          "basic.country": { "type": "string" },
+          "basic.religion": { "type": "string" },
+          "basic.maritalStatus": { "type": "string" },
+          "basic.dateOfBirth": { "type": "date" },
+          "basic.occupation": { "type": "string" },
+          "vision.coreValues": { "type": "string" },
+          "vision.marriageTimeline": { "type": "string" },
+          "isSubmitted": { "type": "boolean" },
+          "completeness.overall": { "type": "number" }
+        }
+      }
+    }
+  }
+]

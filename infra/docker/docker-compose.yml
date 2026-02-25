@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:7
+    container_name: kujuana-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    configs:
+      - source: redis-config
+        target: /usr/local/etc/redis/redis.conf
+  mongo:
+    image: mongo:6
+    container_name: kujuana-mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+volumes:
+  redis-data:
+  mongo-data:
+configs:
+  redis-config:
+    file: ./redis.conf

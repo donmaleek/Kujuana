@@ -1,0 +1,20 @@
+name: Mobile CI
+on:
+  push:
+    paths:
+      - 'apps/mobile/**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: pnpm install
+      - name: EAS Build
+        run: echo 'EAS build step here'
+      - name: Submit
+        run: echo 'EAS submit step here'

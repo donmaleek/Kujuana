@@ -1,0 +1,24 @@
+name: Web CI
+on:
+  push:
+    paths:
+      - 'apps/web/**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Lint
+        run: pnpm lint --filter web
+      - name: Typecheck
+        run: pnpm typecheck --filter web
+      - name: Build
+        run: pnpm build --filter web
+      - name: Deploy
+        run: echo 'Deploy step here'
