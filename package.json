@@ -3,11 +3,11 @@
   "version": "2.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
+    "dev": "corepack pnpm -r --parallel --filter './apps/*' --if-present dev",
+    "build": "corepack pnpm -r --filter './packages/*' --filter './apps/*' --if-present build",
+    "lint": "corepack pnpm -r --filter './packages/*' --filter './apps/*' --if-present lint",
+    "test": "corepack pnpm -r --filter './packages/*' --filter './apps/*' --if-present test",
+    "typecheck": "corepack pnpm -r --filter './packages/*' --filter './apps/*' --if-present typecheck",
     "seed": "tsx infra/scripts/seed.ts",
     "ensure-indexes": "tsx infra/scripts/ensure-indexes.ts",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore"

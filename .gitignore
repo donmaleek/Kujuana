@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+
+# Build artifacts
+dist/
+apps/*/dist/
+packages/*/dist/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+apps/*/.env
+apps/*/.env.*
+
+# Logs and runtime files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage and caches
+coverage/
+.turbo/
+.next/
+.cache/
+.pnpm-store/
+bfg.jar
