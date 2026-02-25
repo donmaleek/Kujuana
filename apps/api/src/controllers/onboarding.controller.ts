@@ -1,8 +1,44 @@
 import type { Request, Response, NextFunction } from 'express';
 import { Profile } from '../models/Profile.model.js';
 import { AppError } from '../middleware/error.middleware.js';
+import {
+  step1PlanSchema,
+  step2BasicSchema,
+  step3BackgroundSchema,
+  step5VisionSchema,
+  step6PreferencesSchema,
+} from '@kujuana/shared';
+import { z } from 'zod';
 
-const STEP_KEYS = ['', 'plan', 'basic', 'background', 'photos', 'vision', 'preferences'];
+const step4PhotosSchema = z
+  .union([
+    z.array(
+      z.object({
+        publicId: z.string().min(1),
+        order: z.number().int().min(1),
+        isPrivate: z.boolean().optional(),
+      }),
+    ),
+    z.object({
+      photos: z.array(
+        z.object({
+          publicId: z.string().min(1),
+          order: z.number().int().min(1),
+          isPrivate: z.boolean().optional(),
+        }),
+      ),
+    }),
+  ])
+  .transform((value) => (Array.isArray(value) ? value : value.photos));
+
+const STEP_CONFIG = {
+  1: { key: 'plan', schema: step1PlanSchema },
+  2: { key: 'basic', schema: step2BasicSchema },
+  3: { key: 'background', schema: step3BackgroundSchema },
+  4: { key: 'photos', schema: step4PhotosSchema },
+  5: { key: 'vision', schema: step5VisionSchema },
+  6: { key: 'preferences', schema: step6PreferencesSchema },
+} as const;
 
 export const onboardingController = {
   async getProgress(req: Request, res: Response, next: NextFunction) {
@@ -16,22 +52,47 @@ export const onboardingController = {
 
   async saveStep(req: Request, res: Response, next: NextFunction) {
     try {
-      const step = parseInt(req.params['step'] ?? '0', 10);
-      if (step < 1 || step > 6) return next(new AppError('Invalid step', 400));
-      const key = STEP_KEYS[step];
-      if (!key) return next(new AppError('Invalid step', 400));
+      const stepParam = req.params['step'];
+      const stepValue = Array.isArray(stepParam) ? stepParam[0] : stepParam;
+      const step = parseInt(stepValue ?? '0', 10);
+      const stepConfig = STEP_CONFIG[step as keyof typeof STEP_CONFIG];
+      if (!stepConfig) return next(new AppError('Invalid step', 400));
 
-      const profile = await Profile.findOneAndUpdate(
-        { userId: req.user!.userId },
-        { [key]: req.body },
-        { new: true, upsert: true },
-      );
+      const parsed = stepConfig.schema.safeParse(req.body);
+      if (!parsed.success) {
+        return next(parsed.error);
+      }
 
-      // Recalculate completeness
-      const completeness = calculateCompleteness(profile);
-      await Profile.findByIdAndUpdate(profile._id, { completeness });
+      let profile = await Profile.findOne({ userId: req.user!.userId });
+      if (!profile) {
+        profile = await Profile.create({ userId: req.user!.userId });
+      }
 
-      res.json({ message: 'Step saved', completeness });
+      if (stepConfig.key === 'photos') {
+        const stepPhotos = parsed.data as Array<{
+          publicId: string;
+          order: number;
+          isPrivate?: boolean;
+        }>;
+
+        const photos = stepPhotos
+          .map((p) => ({
+            publicId: p.publicId,
+            order: p.order,
+            isPrivate: p.isPrivate ?? true,
+            isPrimary: false,
+          }))
+          .sort((a, b) => a.order - b.order)
+          .map((p, i) => ({ ...p, isPrimary: i === 0 }));
+        profile.photos = photos as any;
+      } else {
+        (profile as any)[stepConfig.key] = parsed.data;
+      }
+
+      profile.onboardingStep = Math.max(profile.onboardingStep ?? 1, step);
+      await profile.save();
+
+      res.json({ message: 'Step saved', completeness: profile.completeness });
     } catch (err) {
       next(err);
     }
@@ -45,6 +106,8 @@ export const onboardingController = {
         return next(new AppError('Profile is not complete', 400));
       }
 
+      profile.onboardingComplete = true;
+      profile.isActive = true;
       profile.isSubmitted = true;
       profile.submittedAt = new Date();
       await profile.save();
@@ -55,16 +118,3 @@ export const onboardingController = {
     }
   },
 };
-
-function calculateCompleteness(profile: any) {
-  const basic = Object.keys(profile.basic ?? {}).length >= 5;
-  const background = Object.keys(profile.background ?? {}).length >= 5;
-  const photos = (profile.photos ?? []).length >= 3;
-  const vision = Object.keys(profile.vision ?? {}).length >= 5;
-  const preferences = Object.keys(profile.preferences ?? {}).length >= 4;
-
-  const sections = [basic, background, photos, vision, preferences];
-  const overall = Math.round((sections.filter(Boolean).length / sections.length) * 100);
-
-  return { basic, background, photos, vision, preferences, overall };
-}

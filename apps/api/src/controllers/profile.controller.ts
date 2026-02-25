@@ -22,18 +22,15 @@ export const profileController = {
         preferences?: object;
       };
 
-      const update: Record<string, object> = {};
-      if (basic) update['basic'] = basic;
-      if (background) update['background'] = background;
-      if (vision) update['vision'] = vision;
-      if (preferences) update['preferences'] = preferences;
+      const profile = await Profile.findOne({ userId: req.user!.userId });
+      if (!profile) return next(new AppError('Profile not found', 404));
 
-      const profile = await Profile.findOneAndUpdate(
-        { userId: req.user!.userId },
-        { $set: update },
-        { new: true },
-      );
+      if (basic) profile.basic = basic as Record<string, unknown>;
+      if (background) profile.background = background as Record<string, unknown>;
+      if (vision) profile.vision = vision as Record<string, unknown>;
+      if (preferences) profile.preferences = preferences as Record<string, unknown>;
 
+      await profile.save();
       res.json(profile);
     } catch (err) {
       next(err);

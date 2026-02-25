@@ -9,11 +9,11 @@ export const queueService = {
     return standardQueue.add('match', { userId }, { jobId: `standard-${userId}` });
   },
 
-  async enqueuePriorityMatch(userId: string) {
+  async enqueuePriorityMatch(userId: string, matchRequestId: string) {
     return priorityQueue.add(
       'match',
-      { userId },
-      { priority: 1, removeOnComplete: true },
+      { userId, matchRequestId },
+      { priority: 1, attempts: 3, jobId: `priority-${matchRequestId}` },
     );
   },
 

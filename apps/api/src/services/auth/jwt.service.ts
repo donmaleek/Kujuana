@@ -39,6 +39,10 @@ export async function rotateRefreshToken(
   oldToken: string,
   deviceId: string,
 ): Promise<{ accessToken: string; newRefreshToken: string }> {
+  if (!deviceId) {
+    throw new AppError('Missing device identifier', 401);
+  }
+
   let payload: JwtPayload;
   try {
     payload = verifyRefreshToken(oldToken);
@@ -54,6 +58,11 @@ export async function rotateRefreshToken(
   });
 
   if (!session) throw new AppError('Session not found', 401);
+  if (session.expiresAt.getTime() <= Date.now()) {
+    session.isRevoked = true;
+    await session.save();
+    throw new AppError('Session expired', 401);
+  }
 
   const storedHash = Buffer.from(session.refreshTokenHash);
   const incomingHash = Buffer.from(tokenHash);

@@ -1,4 +1,5 @@
 import { Profile, type IProfileDocument } from '../../models/Profile.model.js';
+import type { PipelineStage } from 'mongoose';
 
 /**
  * Uses MongoDB Atlas Search to retrieve candidate pool for a given seeker.
@@ -6,11 +7,13 @@ import { Profile, type IProfileDocument } from '../../models/Profile.model.js';
  */
 export const atlasSearchService = {
   async getCandidatePool(seekerProfile: IProfileDocument): Promise<IProfileDocument[]> {
-    const { basic, preferences } = seekerProfile;
-    const targetGender = (basic as any).gender === 'male' ? 'female' : 'male';
+    const { preferences } = seekerProfile;
+    // Prefer canonical gender field; fall back to legacy basic.gender if not yet synced.
+    const seekerGender = seekerProfile.gender ?? (seekerProfile.basic as any)?.gender;
+    const targetGender = seekerGender === 'male' ? 'female' : 'male';
 
     // Atlas Search $search aggregation (compound query)
-    const pipeline: object[] = [
+    const pipeline: PipelineStage[] = [
       {
         $search: {
           index: 'profile_search',

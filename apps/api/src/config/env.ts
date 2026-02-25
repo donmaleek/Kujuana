@@ -5,6 +5,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
 
   MONGODB_URI: z.string().url(),
+  USE_IN_MEMORY_MONGO: z.coerce.boolean().default(false),
 
   UPSTASH_REDIS_REST_URL: z.string().url(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),

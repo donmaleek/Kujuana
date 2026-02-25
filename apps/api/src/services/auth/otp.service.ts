@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
 import { redis } from '../../config/redis.js';
+import { safeCompare } from '../../utils/security.js';
 
 const OTP_TTL_SECONDS = 15 * 60; // 15 minutes
 
@@ -22,7 +23,7 @@ export async function verifyOtp(
   token: string,
 ): Promise<boolean> {
   const stored = await redis.get<string>(otpKey(type, identifier));
-  if (!stored || stored !== token) return false;
+  if (!stored || !safeCompare(stored, token)) return false;
   await redis.del(otpKey(type, identifier));
   return true;
 }

@@ -13,12 +13,16 @@ export function requireTier(minTier: SubscriptionTier) {
   return async (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) return next(new AppError('Unauthorized', 401));
 
-    const subscription = await subscriptionRepo.findActiveByUserId(req.user.userId);
-    if (!subscription || TIER_RANK[subscription.tier] < TIER_RANK[minTier]) {
-      return next(
-        new AppError(`This feature requires ${minTier} plan or higher`, 403, 'TIER_REQUIRED'),
-      );
+    try {
+      const subscription = await subscriptionRepo.findActiveByUserId(req.user.userId);
+      if (!subscription || TIER_RANK[subscription.tier] < TIER_RANK[minTier]) {
+        return next(
+          new AppError(`This feature requires ${minTier} plan or higher`, 403, 'TIER_REQUIRED'),
+        );
+      }
+      next();
+    } catch (err) {
+      next(err);
     }
-    next();
   };
 }

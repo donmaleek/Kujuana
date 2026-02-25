@@ -1,8 +1,8 @@
 import { cloudinary, PRIVATE_FOLDER } from '../../config/cloudinary.js';
 import { AppError } from '../../middleware/error.middleware.js';
 
-const MAX_PHOTOS = 6;
-const MIN_PHOTOS_REQUIRED = 3;
+export const MAX_PHOTOS = 6;
+export const MIN_PHOTOS_REQUIRED = 3;
 
 export const uploadService = {
   /**

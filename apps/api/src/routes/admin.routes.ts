@@ -1,9 +1,9 @@
-import { Router } from 'express';
+import { Router, type Router as RouterType } from 'express';
 import { adminController } from '../controllers/admin.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/role.middleware.js';
 
-export const adminRouter = Router();
+export const adminRouter: RouterType = Router();
 
 adminRouter.use(authenticate, requireRole('admin', 'matchmaker'));
 

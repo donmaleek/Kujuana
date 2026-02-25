@@ -1,8 +1,10 @@
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
+import { safeCompare } from '../../utils/security.js';
+import { createHmac } from 'crypto';
 
 interface PesapalInitiateInput {
-  paymentId: string;
+  paymentReference: string;
   amount: number;
   currency: string;
   userId: string;
@@ -38,7 +40,7 @@ export const pesapalGateway = {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        id: input.paymentId,
+        id: input.paymentReference,
         currency: input.currency,
         amount: input.amount,
         description: 'Kujuana Subscription',
@@ -48,16 +50,15 @@ export const pesapalGateway = {
       }),
     });
     const data = (await res.json()) as { redirect_url: string };
-    logger.info({ paymentId: input.paymentId }, 'Pesapal order submitted');
+    logger.info({ paymentReference: input.paymentReference }, 'Pesapal order submitted');
     return data.redirect_url;
   },
 
   verifySignature(payload: string, signature: string): boolean {
     // Pesapal uses HMAC-SHA256
-    const { createHmac } = require('crypto') as typeof import('crypto');
     const expected = createHmac('sha256', env.PESAPAL_CONSUMER_SECRET)
       .update(payload)
       .digest('base64');
-    return expected === signature;
+    return signature ? safeCompare(expected, signature) : false;
   },
 };

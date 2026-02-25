@@ -40,7 +40,15 @@ export const matchmakerService = {
       User.findById(match.userId),
       User.findById(match.matchedUserId),
     ]);
-    if (user) await emailService.sendMatchNotification(user.email, matchId);
-    if (matchedUser) await emailService.sendMatchNotification(matchedUser.email, matchId);
+    if (user) {
+      await emailService.sendMatchNotification(user.email, matchId, {
+        userId: user._id.toString(),
+      });
+    }
+    if (matchedUser) {
+      await emailService.sendMatchNotification(matchedUser.email, matchId, {
+        userId: matchedUser._id.toString(),
+      });
+    }
   },
 };

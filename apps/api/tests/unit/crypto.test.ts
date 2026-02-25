@@ -1,4 +1,4 @@
-import { encrypt, decrypt } from '../../src/config/encryption.js';
+import { encrypt, decrypt } from '../../src/config/encryption';
 
 describe('AES-256-GCM encryption', () => {
   it('encrypts and decrypts a string', () => {

@@ -3,6 +3,9 @@ import { register, login } from '../services/auth/auth.service.js';
 import { verifyOtp } from '../services/auth/otp.service.js';
 import { User } from '../models/User.model.js';
 import { AppError } from '../middleware/error.middleware.js';
+import { setRefreshTokenCookie, clearRefreshTokenCookie } from '../utils/cookies.js';
+import { resolveDeviceId } from '../utils/device.js';
+import { DeviceSession } from '../models/DeviceSession.model.js';
 
 export const authController = {
   async register(req: Request, res: Response, next: NextFunction) {
@@ -16,15 +19,10 @@ export const authController = {
 
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const deviceId = (req.headers['x-device-id'] as string) ?? 'unknown';
+      const deviceId = resolveDeviceId(req);
       const result = await login(req.body, deviceId);
 
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: process.env['NODE_ENV'] === 'production',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-      });
+      setRefreshTokenCookie(res, result.refreshToken);
 
       res.json({ accessToken: result.accessToken, userId: result.userId });
     } catch (err) {
@@ -49,8 +47,17 @@ export const authController = {
     }
   },
 
-  async logout(req: Request, res: Response) {
-    res.clearCookie('refreshToken');
-    res.json({ message: 'Logged out' });
+  async logout(req: Request, res: Response, next: NextFunction) {
+    try {
+      const deviceId = resolveDeviceId(req);
+      await DeviceSession.findOneAndUpdate(
+        { userId: req.user!.userId, deviceId },
+        { isRevoked: true, expiresAt: new Date() },
+      );
+      clearRefreshTokenCookie(res);
+      res.json({ message: 'Logged out' });
+    } catch (err) {
+      next(err);
+    }
   },
 };

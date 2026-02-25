@@ -5,6 +5,7 @@ import type { IScoreBreakdown } from '@kujuana/shared';
 function toSnapshot(profile: IProfileDocument): CandidateSnapshot {
   return {
     basic: profile.basic as any,
+    background: profile.background as any,
     preferences: profile.preferences as any,
     vision: profile.vision as any,
   };

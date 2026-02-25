@@ -1,8 +1,9 @@
 {
-  "extends": "@kujuana/config/tsconfig",
+  "extends": "../../packages/config/tsconfig/base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
+    "isolatedModules": true,
     "paths": {
       "@/*": ["./src/*"]
     }

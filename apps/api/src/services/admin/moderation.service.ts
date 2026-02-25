@@ -6,7 +6,7 @@ export const moderationService = {
   async suspendUser(userId: string, reason: string, adminId: string): Promise<void> {
     const user = await User.findByIdAndUpdate(
       userId,
-      { isSuspended: true, suspensionReason: reason },
+      { isSuspended: true, suspendedReason: reason },
       { new: true },
     );
     if (!user) throw new AppError('User not found', 404);
@@ -25,7 +25,7 @@ export const moderationService = {
   async unsuspendUser(userId: string, adminId: string): Promise<void> {
     const user = await User.findByIdAndUpdate(
       userId,
-      { isSuspended: false, suspensionReason: undefined },
+      { isSuspended: false, suspendedReason: undefined },
       { new: true },
     );
     if (!user) throw new AppError('User not found', 404);

@@ -38,7 +38,12 @@ export const matchingService = {
     logger.info({ userId, matches: scored.length }, 'Standard matching complete');
   },
 
-  async runPriorityMatching(userId: string): Promise<string> {
+  async runPriorityMatching(userId: string): Promise<{
+    matchId: string;
+    candidatesConsidered: number;
+    candidatesFiltered: number;
+    topScore: number;
+  }> {
     const profile = await profileRepo.findByUserId(userId);
     if (!profile?.isSubmitted) throw new AppError('Profile not complete', 400);
 
@@ -58,7 +63,12 @@ export const matchingService = {
       tier: SubscriptionTier.Priority,
     });
 
-    return match._id.toString();
+    return {
+      matchId: match._id.toString(),
+      candidatesConsidered: candidates.length,
+      candidatesFiltered: scored.length,
+      topScore: best.score.total,
+    };
   },
 
   async runVipCuration(userId: string): Promise<string[]> {

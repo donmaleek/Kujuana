@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from './error.middleware.js';
 import { rotateRefreshToken } from '../services/auth/jwt.service.js';
+import { setRefreshTokenCookie } from '../utils/cookies.js';
+import { resolveDeviceId } from '../utils/device.js';
 
 /**
  * Handles refresh token rotation via httpOnly cookie.
@@ -13,17 +15,13 @@ export async function sessionRefresh(req: Request, res: Response, next: NextFunc
   }
 
   try {
+    const deviceId = resolveDeviceId(req);
     const { accessToken, newRefreshToken } = await rotateRefreshToken(
       refreshToken,
-      req.headers['x-device-id'] as string,
+      deviceId,
     );
 
-    res.cookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
-      secure: process.env['NODE_ENV'] === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+    setRefreshTokenCookie(res, newRefreshToken);
 
     res.json({ accessToken });
   } catch (err) {
