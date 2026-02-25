@@ -1,20 +1,46 @@
 name: Mobile CI
+
 on:
   push:
     paths:
       - 'apps/mobile/**'
+      - 'packages/shared/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile.yml'
+
 jobs:
-  build:
+  quality:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Install dependencies
-        run: pnpm install
-      - name: EAS Build
-        run: echo 'EAS build step here'
-      - name: Submit
-        run: echo 'EAS submit step here'
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck mobile
+        run: pnpm --filter mobile typecheck
+
+      - name: Lint mobile
+        run: pnpm --filter mobile lint
+
+      - name: Validate Expo config
+        run: pnpm --filter mobile exec expo config --type public
