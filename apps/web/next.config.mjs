@@ -1,6 +1,5 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   transpilePackages: ['@kujuana/shared', '@kujuana/ui'],
   images: {
     remotePatterns: [
@@ -9,9 +8,6 @@ const nextConfig: NextConfig = {
         hostname: 'res.cloudinary.com',
       },
     ],
-  },
-  experimental: {
-    typedRoutes: true,
   },
 };
 
