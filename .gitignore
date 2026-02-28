@@ -26,6 +26,14 @@ yarn-error.log*
 coverage/
 .turbo/
 .next/
+.next_old_*/
+apps/web/.next_old_*/
 .cache/
 .pnpm-store/
 bfg.jar
+
+# Windows metadata artifacts
+*:Zone.Identifier
+
+# Monorepo uses pnpm lock at root
+apps/web/package-lock.json

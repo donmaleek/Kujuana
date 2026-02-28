@@ -1,26 +1,34 @@
-'use client';
+// kujuana/apps/web/components/shared/ProtectedRoute.tsx
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/auth.store';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useMe } from "@/lib/auth";
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export function ProtectedRoute({
+  children,
+  requireProfileComplete,
+}: {
+  children: React.ReactNode;
+  requireProfileComplete?: boolean;
+}) {
   const router = useRouter();
-  const accessToken = useAuthStore((state) => state.accessToken);
+  const { user, loading } = useMe();
 
   useEffect(() => {
-    if (!accessToken) {
-      router.replace('/login');
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+      return;
     }
-  }, [accessToken, router]);
+    if (requireProfileComplete && !user.profileCompleted) {
+      router.replace("/step/1-plan");
+    }
+  }, [user, loading, requireProfileComplete, router]);
 
-  if (!accessToken) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
-        Redirecting to sign in...
-      </div>
-    );
-  }
+  if (loading) return null;
+  if (!user) return null;
+  if (requireProfileComplete && !user.profileCompleted) return null;
 
   return <>{children}</>;
 }

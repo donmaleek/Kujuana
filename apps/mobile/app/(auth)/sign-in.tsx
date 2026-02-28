@@ -25,16 +25,19 @@ export default function SignInScreen() {
 
   async function submit() {
     setError('');
+    if (!email.trim() || !password) {
+      setError('Please enter your email and password.');
+      return;
+    }
     setLoading(true);
-
     try {
       await signInWithPassword({ email: email.trim().toLowerCase(), password });
-      router.replace('/');
+      // Auth store updates → index.tsx redirect handles navigation automatically
     } catch (err) {
       if (err instanceof ApiError || err instanceof Error) {
         setError(err.message);
       } else {
-        setError('Unable to sign in right now.');
+        setError('Unable to sign in right now. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -56,21 +59,35 @@ export default function SignInScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.container} bounces={false}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.phoneFrame}>
             <View style={styles.phoneNotch} />
 
             <View style={styles.logoWrap}>
               <View style={styles.logoStage}>
                 <View style={styles.logoHalo} />
-                <Image source={require('../../assets/kujuana_logo.png')} style={styles.logoImage} resizeMode="contain" />
+                <Image
+                  source={require('../../assets/kujuana_logo.png')}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
               <Text style={styles.brand}>KUJUANA</Text>
               <Text style={styles.tagline}>Dating with intention.</Text>
             </View>
 
-            <Text style={styles.title}>Log in</Text>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Text style={styles.title}>Welcome back</Text>
+
+            {error ? (
+              <View style={styles.errorRow}>
+                <Ionicons name="alert-circle-outline" size={14} color="#f3b0b0" />
+                <Text style={styles.error}> {error}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.cardOuter}>
               <LinearGradient
@@ -81,7 +98,7 @@ export default function SignInScreen() {
               >
                 <GoldInput
                   icon="mail-outline"
-                  placeholder="Email"
+                  placeholder="Email address"
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -111,8 +128,10 @@ export default function SignInScreen() {
                           secureTextEntry={!showPass}
                           style={styles.input}
                           autoCapitalize="none"
+                          onSubmitEditing={submit}
+                          returnKeyType="go"
                         />
-                        <Pressable onPress={() => setShowPass((s) => !s)} hitSlop={10}>
+                        <Pressable onPress={() => setShowPass((s) => !s)} hitSlop={12}>
                           <Ionicons
                             name={showPass ? 'eye-outline' : 'eye-off-outline'}
                             size={18}
@@ -131,18 +150,23 @@ export default function SignInScreen() {
                     end={{ x: 0.9, y: 0.8 }}
                     style={[styles.btn, loading && styles.btnDisabled]}
                   >
-                    <Text style={styles.btnText}>{loading ? 'Signing in...' : 'Continue'}</Text>
+                    <Text style={styles.btnText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
                   </LinearGradient>
                 </Pressable>
 
-                <View style={styles.loginRow}>
-                  <Text style={styles.loginText}>Need an account? </Text>
+                <View style={styles.signupRow}>
+                  <Text style={styles.signupText}>Need an account? </Text>
                   <Pressable onPress={() => router.replace('/(auth)/register')}>
-                    <Text style={styles.loginLink}>Create Account</Text>
+                    <Text style={styles.signupLink}>Create Account</Text>
                   </Pressable>
                 </View>
               </LinearGradient>
             </View>
+
+            <Pressable style={styles.backRow} onPress={() => router.back()}>
+              <Ionicons name="chevron-back-outline" size={14} color="rgba(255,215,0,0.65)" />
+              <Text style={styles.backText}>Back to options</Text>
+            </Pressable>
 
             <Text style={styles.footer}>Private. Verified. Secure.</Text>
           </View>
@@ -161,7 +185,6 @@ function GoldInput(props: {
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   const { icon, ...rest } = props;
-
   return (
     <View style={styles.inputOuter}>
       <LinearGradient
@@ -171,17 +194,8 @@ function GoldInput(props: {
         style={styles.inputBorder}
       >
         <View style={styles.inputInner}>
-          <Ionicons
-            name={icon}
-            size={18}
-            color="rgba(255,255,255,0.85)"
-            style={{ marginRight: 10 }}
-          />
-          <TextInput
-            placeholderTextColor="rgba(255,255,255,0.60)"
-            style={styles.input}
-            {...rest}
-          />
+          <Ionicons name={icon} size={18} color="rgba(255,255,255,0.85)" style={{ marginRight: 10 }} />
+          <TextInput placeholderTextColor="rgba(255,255,255,0.60)" style={styles.input} {...rest} />
         </View>
       </LinearGradient>
     </View>
@@ -237,30 +251,23 @@ const styles = StyleSheet.create({
   },
   logoWrap: { alignItems: 'center', marginTop: 8 },
   logoStage: {
-    width: 228,
-    height: 228,
+    width: 160,
+    height: 160,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoHalo: {
     position: 'absolute',
-    width: 216,
-    height: 216,
+    width: 152,
+    height: 152,
     borderRadius: 999,
     backgroundColor: 'rgba(255, 215, 0, 0.15)',
     shadowColor: '#FFD700',
     shadowOpacity: 0.48,
-    shadowRadius: 30,
+    shadowRadius: 26,
     shadowOffset: { width: 0, height: 0 },
   },
-  logoImage: {
-    width: 210,
-    height: 210,
-    shadowColor: 'rgba(255, 215, 0, 0.9)',
-    shadowOpacity: 0.65,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 0 },
-  },
+  logoImage: { width: 144, height: 144 },
   brand: {
     marginTop: 10,
     color: '#FFD700',
@@ -270,27 +277,25 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(255, 215, 0, 0.55)',
     textShadowRadius: 10,
   },
-  tagline: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 13,
-  },
+  tagline: { marginTop: 4, color: 'rgba(255,255,255,0.75)', fontSize: 13 },
   title: {
     marginTop: 18,
-    marginBottom: 14,
+    marginBottom: 6,
     textAlign: 'center',
     color: '#FFD700',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '800',
     textShadowColor: 'rgba(255, 215, 0, 0.55)',
     textShadowRadius: 10,
   },
-  error: {
-    color: '#f3b0b0',
-    textAlign: 'center',
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
-    fontSize: 12,
+    paddingHorizontal: 4,
   },
+  error: { color: '#f3b0b0', fontSize: 12 },
   cardOuter: {
     marginTop: 8,
     borderRadius: 22,
@@ -303,14 +308,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 14,
+    paddingBottom: 16,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   inputOuter: { marginTop: 14 },
-  inputBorder: {
-    borderRadius: 18,
-    padding: 1.2,
-  },
+  inputBorder: { borderRadius: 18, padding: 1.2 },
   inputInner: {
     borderRadius: 17,
     paddingHorizontal: 14,
@@ -319,44 +321,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.18)',
   },
-  input: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 14,
-  },
+  input: { flex: 1, color: 'rgba(255,255,255,0.92)', fontSize: 14 },
   btnWrap: { marginTop: 18 },
-  btn: {
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnDisabled: {
-    opacity: 0.7,
-  },
-  btnText: {
-    color: '#1C0C2A',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  loginRow: {
+  btn: { height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  btnDisabled: { opacity: 0.7 },
+  btnText: { color: '#1C0C2A', fontSize: 16, fontWeight: '800' },
+  signupRow: {
     marginTop: 14,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loginText: { color: 'rgba(255,255,255,0.70)', fontSize: 12.5 },
-  loginLink: {
+  signupText: { color: 'rgba(255,255,255,0.70)', fontSize: 12.5 },
+  signupLink: {
     color: '#FFD700',
     fontSize: 12.5,
     fontWeight: '700',
     textShadowColor: 'rgba(255, 215, 0, 0.45)',
     textShadowRadius: 7,
   },
+  backRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  backText: { color: 'rgba(255,215,0,0.65)', fontSize: 12.5 },
   footer: {
-    marginTop: 18,
+    marginTop: 12,
     textAlign: 'center',
-    color: 'rgba(255,255,255,0.60)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.50)',
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
 });

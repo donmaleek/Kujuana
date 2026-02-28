@@ -13,7 +13,7 @@ export interface IUser {
   updatedAt: Date;
 }
 
-export type UserRole = 'member' | 'admin' | 'matchmaker';
+export type UserRole = 'member' | 'admin' | 'manager' | 'matchmaker';
 
 export interface IUserPublic {
   _id: string;

@@ -4,11 +4,13 @@ import { connectDB } from './config/db.js';
 import { logger } from './config/logger.js';
 import { env } from './config/env.js';
 import { ensureIndexes } from './db/indexes.js';
+import { ensureDevAdmin } from './db/dev-admin.js';
 import { startWorkers, stopWorkers } from './workers/index.js';
 import { startJobs } from './jobs/index.js';
 
 async function main() {
   await connectDB();
+  await ensureDevAdmin();
   await ensureIndexes();
 
 

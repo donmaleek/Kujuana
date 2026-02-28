@@ -23,10 +23,46 @@ interface SendEmailInput {
   to: string;
   subject: string;
   html: string;
+  previewUrl?: string;
   context?: EmailNotificationContext;
 }
 
-async function sendWithAudit(input: SendEmailInput): Promise<void> {
+export interface EmailDispatchResult {
+  delivered: boolean;
+  previewUrl?: string;
+}
+
+const isDev = env.NODE_ENV !== 'production';
+const isPlaceholderResendKey = /^re_test$/i.test(env.RESEND_API_KEY.trim());
+
+async function markNotificationFailed(
+  notification: INotificationDocument | null,
+  data?: Record<string, unknown>,
+) {
+  if (!notification) return;
+  notification.status = 'failed';
+  notification.sentAt = new Date();
+  if (data) {
+    notification.data = {
+      ...(notification.data ?? {}),
+      ...data,
+    };
+  }
+  await notification.save();
+}
+
+async function markNotificationSent(
+  notification: INotificationDocument | null,
+  resendMessageId?: string,
+) {
+  if (!notification) return;
+  notification.status = 'sent';
+  notification.sentAt = new Date();
+  if (resendMessageId) notification.resendMessageId = resendMessageId;
+  await notification.save();
+}
+
+async function sendWithAudit(input: SendEmailInput): Promise<EmailDispatchResult> {
   let notification: INotificationDocument | null = null;
 
   if (input.context?.userId) {
@@ -44,6 +80,19 @@ async function sendWithAudit(input: SendEmailInput): Promise<void> {
     });
   }
 
+  if (isDev && isPlaceholderResendKey) {
+    logger.warn(
+      { to: input.to, subject: input.subject, previewUrl: input.previewUrl },
+      'RESEND_API_KEY is placeholder; using development email preview fallback',
+    );
+    await markNotificationFailed(notification, {
+      emailFallback: 'dev_preview',
+      previewUrl: input.previewUrl,
+      reason: 'RESEND_API_KEY placeholder',
+    });
+    return { delivered: false, previewUrl: input.previewUrl };
+  }
+
   try {
     const result = await resend.emails.send({
       from: env.EMAIL_FROM,
@@ -58,18 +107,23 @@ async function sendWithAudit(input: SendEmailInput): Promise<void> {
       throw new Error(resendError.message ?? 'Resend API error');
     }
 
-    if (notification) {
-      notification.status = 'sent';
-      notification.sentAt = new Date();
-      notification.resendMessageId = resendMessageId;
-      await notification.save();
-    }
+    await markNotificationSent(notification, resendMessageId);
+    return { delivered: true };
   } catch (err) {
-    if (notification) {
-      notification.status = 'failed';
-      notification.sentAt = new Date();
-      await notification.save();
+    if (isDev && input.previewUrl) {
+      logger.warn(
+        { err, to: input.to, subject: input.subject, previewUrl: input.previewUrl },
+        'Email provider failed; using development email preview fallback',
+      );
+      await markNotificationFailed(notification, {
+        emailFallback: 'dev_preview',
+        previewUrl: input.previewUrl,
+        reason: err instanceof Error ? err.message : 'unknown_error',
+      });
+      return { delivered: false, previewUrl: input.previewUrl };
     }
+
+    await markNotificationFailed(notification);
     throw err;
   }
 }
@@ -79,12 +133,13 @@ export const emailService = {
     to: string,
     token: string,
     context?: { userId?: string },
-  ): Promise<void> {
-    const link = `${env.WEB_BASE_URL}/verify-email?token=${token}`;
-    await sendWithAudit({
+  ): Promise<EmailDispatchResult> {
+    const link = `${env.WEB_BASE_URL}/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
+    const result = await sendWithAudit({
       to,
       subject: 'Verify your Kujuana email',
       html: `<p>Click <a href="${link}">here</a> to verify your email. Link expires in 15 minutes.</p>`,
+      previewUrl: link,
       context: {
         userId: context?.userId,
         type: 'email_verified',
@@ -92,7 +147,8 @@ export const emailService = {
         body: 'Confirm your email address to activate your account.',
       },
     });
-    logger.info({ to }, 'Verification email sent');
+    logger.info({ to, delivered: result.delivered, previewUrl: result.previewUrl }, 'Verification email dispatch result');
+    return result;
   },
 
   async sendPasswordReset(
@@ -104,12 +160,13 @@ export const emailService = {
       title?: string;
       body?: string;
     },
-  ): Promise<void> {
+  ): Promise<EmailDispatchResult> {
     const link = `${env.WEB_BASE_URL}/reset-password?token=${token}`;
-    await sendWithAudit({
+    return sendWithAudit({
       to,
       subject: 'Reset your Kujuana password',
       html: `<p>Click <a href="${link}">here</a> to reset your password. Link expires in 15 minutes.</p>`,
+      previewUrl: link,
       context: context?.notificationType
         ? {
             userId: context.userId,
@@ -125,12 +182,13 @@ export const emailService = {
     to: string,
     matchId: string,
     context?: { userId?: string },
-  ): Promise<void> {
+  ): Promise<EmailDispatchResult> {
     const link = `${env.WEB_BASE_URL}/matches/${matchId}`;
-    await sendWithAudit({
+    return sendWithAudit({
       to,
       subject: 'You have a new match on Kujuana',
       html: `<p>You have a new match! <a href="${link}">View your match</a>.</p>`,
+      previewUrl: link,
       context: {
         userId: context?.userId,
         type: 'match_new',
@@ -146,8 +204,8 @@ export const emailService = {
     amount: number,
     currency: string,
     context?: { userId?: string; paymentId?: string },
-  ): Promise<void> {
-    await sendWithAudit({
+  ): Promise<EmailDispatchResult> {
+    return sendWithAudit({
       to,
       subject: 'Kujuana payment confirmation',
       html: `<p>Your payment of ${currency} ${amount} has been received. Thank you for subscribing to Kujuana.</p>`,

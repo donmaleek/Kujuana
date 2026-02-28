@@ -1,33 +1,62 @@
-import { SubscriptionTier, TIER_CONFIG } from '@kujuana/shared';
-import Link from 'next/link';
+// kujuana/apps/web/components/billing/PricingTable.tsx
+"use client";
 
-const tiers = [SubscriptionTier.Standard, SubscriptionTier.Priority, SubscriptionTier.VIP];
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-export function PricingTable() {
+export type PricingChoice =
+  | { kind: "priority_single"; label: string; priceKes: number; credits: number }
+  | { kind: "priority_5"; label: string; priceKes: number; credits: number }
+  | { kind: "priority_10"; label: string; priceKes: number; credits: number }
+  | { kind: "vip_monthly"; label: string; priceKes: number; credits?: number };
+
+const choices: PricingChoice[] = [
+  { kind: "priority_single", label: "Priority • 1 Match", priceKes: 500, credits: 1 },
+  { kind: "priority_5", label: "Priority • 5 Pack", priceKes: 2000, credits: 5 },
+  { kind: "priority_10", label: "Priority • 10 Pack", priceKes: 3500, credits: 10 },
+  { kind: "vip_monthly", label: "VIP • Monthly", priceKes: 10000 },
+];
+
+export function PricingTable({
+  onSelect,
+}: {
+  onSelect: (choice: PricingChoice) => void;
+}) {
   return (
-    <div className="grid gap-6 md:grid-cols-3">
-      {tiers.map((tier) => {
-        const config = TIER_CONFIG[tier];
-        return (
-          <article key={tier} className="rounded-lg border p-6">
-            <h3 className="text-xl font-semibold">{config.label}</h3>
-            <p className="mt-3 text-3xl font-bold">KES {config.price.KES}</p>
-            <p className="text-sm text-muted-foreground">or USD {config.price.USD}</p>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li>Credits per cycle: {config.creditsPerCycle}</li>
-              <li>Matching cadence: {config.matchingCadence}</li>
-              <li>Private photo access: {config.privatePhotoAccess ? 'Yes' : 'No'}</li>
-              <li>Matchmaker access: {config.matchmakerAccess ? 'Yes' : 'No'}</li>
-            </ul>
-            <Link
-              href="/register"
-              className="mt-6 inline-flex w-full items-center justify-center rounded bg-primary px-4 py-2 text-primary-foreground"
-            >
-              Choose {config.label}
-            </Link>
-          </article>
-        );
-      })}
+    <div className="grid gap-4 md:grid-cols-2">
+      {choices.map((c) => (
+        <Card key={c.kind} className={c.kind === "vip_monthly" ? "border-[#E8D27C]/25" : undefined}>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>{c.label}</span>
+              {c.kind === "vip_monthly" ? <Badge variant="gold">Curated</Badge> : <Badge variant="muted">Instant</Badge>}
+            </CardTitle>
+            <CardDescription>
+              {c.kind === "vip_monthly"
+                ? "Human matchmaker review, premium add-ons, deeper privacy controls."
+                : "Instant dispatch, highest queue priority, pay-per-match credits."}
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            <div className="text-2xl font-extrabold text-[#F5E6B3]">
+              KES {c.priceKes.toLocaleString()}
+            </div>
+            {"credits" in c ? (
+              <div className="mt-2 text-sm text-white/70">
+                Credits: <span className="font-semibold text-white">{c.credits}</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-white/70">Unlimited curated introductions</div>
+            )}
+
+            <Button className="mt-5 w-full" variant={c.kind === "vip_monthly" ? "gold" : "outline"} onClick={() => onSelect(c)}>
+              Choose
+            </Button>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }

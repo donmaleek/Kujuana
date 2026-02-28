@@ -9,3 +9,4 @@ matchingRouter.get('/', matchingController.listMatches);
 matchingRouter.get('/:id', matchingController.getMatch);
 matchingRouter.patch('/:id/respond', matchingController.respondToMatch);
 matchingRouter.post('/priority', matchingController.requestPriorityMatch);
+matchingRouter.post('/request', matchingController.requestPriorityMatch);

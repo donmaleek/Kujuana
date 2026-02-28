@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import type { UserRole } from '@kujuana/shared';
 
-const USER_ROLE_VALUES: UserRole[] = ['member', 'admin', 'matchmaker'];
+const USER_ROLE_VALUES: UserRole[] = ['member', 'admin', 'manager', 'matchmaker'];
 const BCRYPT_HASH_PREFIX = /^\$2[aby]\$\d{2}\$/;
 
 export interface IUserDocument extends Document {

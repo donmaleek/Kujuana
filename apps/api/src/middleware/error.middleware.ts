@@ -50,6 +50,19 @@ export function errorMiddleware(
     });
   }
 
+  if (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 11000
+  ) {
+    return res.status(409).json({
+      error: 'Email or phone already registered',
+      code: 'DUPLICATE_RESOURCE',
+      requestId: req.requestId,
+    });
+  }
+
   logger.error({ err, req: requestContext }, 'Unhandled error');
   return res.status(500).json({ error: 'Internal server error', requestId: req.requestId });
 }

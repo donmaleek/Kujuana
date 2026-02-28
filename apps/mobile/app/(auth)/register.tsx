@@ -22,11 +22,18 @@ export default function RegisterScreen() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function submit() {
     setError('');
+
+    if (!agreedToTerms) {
+      setError('Please accept the Terms and Privacy Policy to continue.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -35,6 +42,7 @@ export default function RegisterScreen() {
         email: email.trim().toLowerCase(),
         phone: phone.trim(),
         password,
+        agreedToTerms: true,
       });
 
       router.push({ pathname: '/(auth)/verify-email', params: { email } });
@@ -147,6 +155,20 @@ export default function RegisterScreen() {
                     </LinearGradient>
                   </View>
                 </View>
+
+                <Pressable
+                  style={styles.termsRow}
+                  onPress={() => setAgreedToTerms((prev) => !prev)}
+                >
+                  <View style={[styles.termsCheckbox, agreedToTerms && styles.termsCheckboxChecked]}>
+                    {agreedToTerms ? (
+                      <Ionicons name="checkmark" size={13} color="#0f0618" />
+                    ) : null}
+                  </View>
+                  <Text style={styles.termsText}>
+                    I agree to Kujuana&apos;s Terms of Service and Privacy Policy.
+                  </Text>
+                </Pressable>
 
                 <Pressable style={styles.btnWrap} onPress={submit} disabled={loading}>
                   <LinearGradient
@@ -362,6 +384,33 @@ const styles = StyleSheet.create({
     color: '#1C0C2A',
     fontSize: 16,
     fontWeight: '800',
+  },
+  termsRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  termsCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.75)',
+    marginTop: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  termsCheckboxChecked: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFD700',
+  },
+  termsText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    lineHeight: 18,
   },
   loginRow: {
     marginTop: 14,

@@ -54,7 +54,10 @@ export const paymentsService = {
     const idempotencyKey = buildIdempotencyKey(userId, purpose);
 
     const existingByIdempotency = await Payment.findOne({ userId, idempotencyKey });
-    if (existingByIdempotency && existingByIdempotency.status !== 'pending') {
+    if (
+      existingByIdempotency &&
+      ['completed', 'refunded'].includes(existingByIdempotency.status)
+    ) {
       throw new AppError(
         'A payment was already initiated recently. Please wait a few minutes before retrying.',
         409,
@@ -85,6 +88,12 @@ export const paymentsService = {
           reused: true,
         };
       }
+
+      if (existingByIdempotency.status === 'failed') {
+        existingByIdempotency.status = 'pending';
+        existingByIdempotency.failureReason = undefined;
+        await existingByIdempotency.save();
+      }
     }
 
     let payment = existingByIdempotency;
@@ -114,14 +123,35 @@ export const paymentsService = {
       throw new AppError('Failed to initialize payment', 500);
     }
 
-    const checkoutUrl = await initiateGateway({
-      gateway: input.gateway,
-      paymentReference: payment.internalRef,
-      amount,
-      currency: input.currency,
-      userId,
-      returnUrl: input.returnUrl,
-    });
+    let checkoutUrl: string;
+    try {
+      checkoutUrl = await initiateGateway({
+        gateway: input.gateway,
+        paymentReference: payment.internalRef,
+        amount,
+        currency: input.currency,
+        userId,
+        returnUrl: input.returnUrl,
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Payment gateway initiation failed';
+      await Payment.findByIdAndUpdate(payment._id, {
+        status: 'failed',
+        failureReason: reason.slice(0, 500),
+      });
+      if (err instanceof AppError) {
+        throw new AppError(
+          `${err.message} (reference: ${payment.internalRef})`,
+          err.statusCode,
+          err.code ?? 'PAYMENT_GATEWAY_ERROR',
+        );
+      }
+      throw new AppError(
+        `Payment gateway initiation failed (reference: ${payment.internalRef})`,
+        502,
+        'PAYMENT_GATEWAY_ERROR',
+      );
+    }
 
     payment = await Payment.findByIdAndUpdate(
       payment._id,

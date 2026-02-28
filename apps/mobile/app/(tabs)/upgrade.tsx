@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import { SubscriptionTier, TIER_CONFIG, type SubscriptionTier as TierType } from '@kujuana/shared';
 import { initiatePayment } from '@/lib/api/endpoints';
 import { ApiError } from '@/lib/api/types';
@@ -14,6 +15,22 @@ import { formatCurrency } from '@/lib/utils/format';
 import { theme } from '@/lib/config/theme';
 
 const availableTiers = [SubscriptionTier.Standard, SubscriptionTier.Priority, SubscriptionTier.VIP];
+const tierIcons = {
+  standard: 'star-outline',
+  priority: 'flash-outline',
+  vip: 'diamond-outline',
+};
+const tierColors = {
+  standard: ['#6EDBB0', '#059669'],
+  priority: ['#C084FC', '#7C3AED'],
+  vip: ['#FFE680', '#D9A300'],
+};
+const featureList = [
+  { key: 'matchingCadence', label: 'Matching cadence' },
+  { key: 'creditsPerCycle', label: 'Credits per cycle' },
+  { key: 'prioritySupport', label: 'Priority support' },
+  { key: 'curatedMatches', label: 'Curated matches' },
+];
 
 export default function UpgradeTabScreen() {
   const [tier, setTier] = useState<TierType>(SubscriptionTier.Priority);
@@ -39,27 +56,65 @@ export default function UpgradeTabScreen() {
 
   return (
     <Screen>
-      <SectionCard title="Upgrade your plan" subtitle="Payments are gateway-hosted for secure completion.">
-        {error ? <ErrorBanner message={error} /> : null}
+      <Text style={styles.screenTitle}>Upgrade</Text>
+      {error ? <ErrorBanner message={error} /> : null}
 
-        <Text style={styles.label}>Choose Tier</Text>
-        <ChoiceChips
-          options={availableTiers}
-          selected={[tier]}
-          onChange={(values) => {
-            const value = values[0] as TierType | undefined;
-            if (value) setTier(value);
-          }}
-          multiple={false}
-        />
+      {/* Tier cards */}
+      <View style={styles.tierCardsRow}>
+        {availableTiers.map((t) => (
+          <View
+            key={t}
+            style={[
+              styles.tierCard,
+              tier === t && styles.tierCardActive,
+              { borderColor: tierColors[t][0], shadowColor: tierColors[t][1] },
+            ]}
+          >
+            <Ionicons
+              name={tierIcons[t] as any}
+              size={28}
+              color={tierColors[t][0]}
+              style={{ alignSelf: 'center', marginBottom: 4 }}
+            />
+            <Text style={styles.tierLabel}>{TIER_CONFIG[t].label}</Text>
+            <Text style={styles.tierPrice}>{formatCurrency(TIER_CONFIG[t].price[currency], currency)}</Text>
+            <Button
+              label={tier === t ? 'Selected' : 'Choose'}
+              variant={tier === t ? 'primary' : 'secondary'}
+              onPress={() => setTier(t)}
+              disabled={tier === t}
+              style={{ marginTop: 8 }}
+            />
+          </View>
+        ))}
+      </View>
 
-        <View style={styles.priceCard}>
-          <Text style={styles.priceLabel}>{TIER_CONFIG[tier].label}</Text>
-          <Text style={styles.priceValue}>{formatCurrency(TIER_CONFIG[tier].price[currency], currency)}</Text>
-          <Text style={styles.priceMeta}>Cadence: {TIER_CONFIG[tier].matchingCadence}</Text>
-          <Text style={styles.priceMeta}>Credits per cycle: {TIER_CONFIG[tier].creditsPerCycle}</Text>
+      {/* Feature comparison */}
+      <SectionCard title="Compare Tiers" subtitle="See what each plan offers.">
+        <View style={styles.featureTable}>
+          <View style={styles.featureHeaderRow}>
+            <Text style={styles.featureHeader}>Feature</Text>
+            {availableTiers.map((t) => (
+              <Text key={t} style={[styles.featureHeader, { color: tierColors[t][0] }]}>{TIER_CONFIG[t].label}</Text>
+            ))}
+          </View>
+          {featureList.map((feat) => (
+            <View key={feat.key} style={styles.featureRow}>
+              <Text style={styles.featureLabel}>{feat.label}</Text>
+              {availableTiers.map((t) => (
+                <Text key={t} style={styles.featureValue}>
+                  {feat.key === 'prioritySupport' || feat.key === 'curatedMatches'
+                    ? TIER_CONFIG[t][feat.key] ? '✔️' : '—'
+                    : TIER_CONFIG[t][feat.key]}
+                </Text>
+              ))}
+            </View>
+          ))}
         </View>
+      </SectionCard>
 
+      {/* Gateway and currency selection */}
+      <SectionCard title="Payment Options">
         <Text style={styles.label}>Gateway</Text>
         <ChoiceChips
           options={['pesapal', 'flutterwave']}
@@ -70,7 +125,6 @@ export default function UpgradeTabScreen() {
           }}
           multiple={false}
         />
-
         <Text style={styles.label}>Currency</Text>
         <ChoiceChips
           options={['KES', 'USD']}
@@ -81,7 +135,6 @@ export default function UpgradeTabScreen() {
           }}
           multiple={false}
         />
-
         <Button
           label="Continue to Checkout"
           onPress={() => {
@@ -90,7 +143,6 @@ export default function UpgradeTabScreen() {
           }}
           loading={paymentMutation.isPending}
         />
-
         {checkoutUrl ? <Text style={styles.small}>Checkout link opened in browser.</Text> : null}
       </SectionCard>
     </Screen>
@@ -98,38 +150,103 @@ export default function UpgradeTabScreen() {
 }
 
 const styles = StyleSheet.create({
+  screenTitle: {
+    fontSize: 28,
+    fontFamily: theme.font.sansBold,
+    color: theme.colors.primary,
+    marginBottom: 18,
+    marginTop: 2,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  tierCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+    justifyContent: 'center',
+  },
+  tierCard: {
+    flex: 1,
+    minWidth: 110,
+    maxWidth: 140,
+    borderRadius: 18,
+    borderWidth: 2,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    alignItems: 'center',
+    padding: 14,
+    marginHorizontal: 2,
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 7,
+  },
+  tierCardActive: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 2.5,
+    elevation: 10,
+  },
+  tierLabel: {
+    fontFamily: theme.font.sansBold,
+    fontSize: 16,
+    color: theme.colors.primary,
+    marginBottom: 2,
+  },
+  tierPrice: {
+    fontFamily: theme.font.serif,
+    fontSize: 22,
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  featureTable: {
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  featureHeaderRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 4,
+  },
+  featureHeader: {
+    flex: 1,
+    fontFamily: theme.font.sansBold,
+    fontSize: 13,
+    color: theme.colors.text,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 2,
+    alignItems: 'center',
+  },
+  featureLabel: {
+    flex: 1,
+    fontFamily: theme.font.sans,
+    color: theme.colors.text,
+    fontSize: 13,
+    textAlign: 'left',
+  },
+  featureValue: {
+    flex: 1,
+    fontFamily: theme.font.sans,
+    color: theme.colors.text,
+    fontSize: 13,
+    textAlign: 'center',
+  },
   label: {
     fontFamily: theme.font.sansBold,
     fontSize: 13,
     color: theme.colors.text,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
-  },
-  priceCard: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: 'rgba(227,193,111,0.16)',
-    gap: 3,
-  },
-  priceLabel: {
-    fontFamily: theme.font.sansBold,
-    color: theme.colors.primary,
-  },
-  priceValue: {
-    fontFamily: theme.font.serif,
-    fontSize: 30,
-    color: theme.colors.text,
-  },
-  priceMeta: {
-    fontFamily: theme.font.sans,
-    color: theme.colors.textMuted,
-    fontSize: 13,
+    marginTop: 8,
   },
   small: {
     fontFamily: theme.font.sans,
     color: theme.colors.textMuted,
     fontSize: 12,
+    marginTop: 6,
   },
 });

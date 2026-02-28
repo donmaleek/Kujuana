@@ -1,28 +1,528 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ─────────────────────────────────────────────────────────────────────
+   KUJUANA DESIGN TOKENS — Luxury Royal Palette
+   NOTE: Fonts are loaded via next/font in layout.tsx — NO @import here.
+   The variables --font-cormorant and --font-jost are injected by Next.js.
+──────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Purples */
+  --purple-deepest:   #18021F;
+  --purple-dark:      #2A0838;
+  --purple-royal:     #3B0F4F;
+  --purple-mid:       #4A1663;
+  --purple-light:     #5C2278;
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --primary: 142 71% 45%;
-    --primary-foreground: 355 100% 97%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --radius: 0.5rem;
+  /* Golds */
+  --gold-rich:        #C9A227;
+  --gold-primary:     #D4AF37;
+  --gold-champagne:   #E8D27C;
+  --gold-glow:        #F5E6B3;
+  --gold-muted:       #A8892C;
+
+  /* Neutrals */
+  --white:            #FFFFFF;
+  --off-white:        #F9F4ED;
+  --text-body:        #EDE0C4;
+  --text-muted:       #C4A882;
+  --overlay-dark:     rgba(24, 2, 31, 0.85);
+
+  /* Gradients */
+  --grad-gold:        linear-gradient(135deg, #E8D27C, #D4AF37, #C9A227);
+  --grad-gold-soft:   linear-gradient(135deg, #F5E6B3, #E8D27C, #D4AF37);
+  --grad-purple:      linear-gradient(180deg, #3B0F4F 0%, #2A0838 100%);
+  --grad-purple-rich: linear-gradient(160deg, #4A1663 0%, #18021F 100%);
+  --grad-hero:        linear-gradient(160deg, #4A1663 0%, #2A0838 55%, #18021F 100%);
+
+  /* Typography — variables injected by next/font */
+  --font-display:     var(--font-cormorant), Georgia, serif;
+  --font-body:        var(--font-jost), system-ui, sans-serif;
+
+  /* Spacing */
+  --section-pad:      clamp(80px, 10vw, 140px);
+  --container:        1200px;
+
+  /* Shadows */
+  --shadow-gold:      0 0 30px rgba(212, 175, 55, 0.25), 0 0 80px rgba(212, 175, 55, 0.08);
+  --shadow-gold-sm:   0 0 12px rgba(212, 175, 55, 0.20);
+  --shadow-card:      0 8px 40px rgba(24, 2, 31, 0.6);
+
+  /* Borders */
+  --border-gold:      1px solid rgba(212, 175, 55, 0.3);
+  --border-gold-dim:  1px solid rgba(212, 175, 55, 0.12);
+
+  /* Transitions */
+  --ease-luxury:      cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-spring:      cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   RESET & BASE
+──────────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-body);
+  background-color: var(--purple-royal);
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SCROLLBAR
+──────────────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--purple-deepest); }
+::-webkit-scrollbar-thumb {
+  /* Solid fallback first, gradient overlay for supporting browsers */
+  background: #D4AF37;
+  background: var(--grad-gold);
+  border-radius: 3px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY SYSTEM
+──────────────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
+.display-xl {
+  font-size: clamp(3.2rem, 7vw, 7rem);
+  font-family: var(--font-display);
+  font-weight: 300;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.display-lg {
+  font-size: clamp(2.4rem, 5vw, 4.5rem);
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.12;
+}
+
+.display-md {
+  font-size: clamp(1.8rem, 3.5vw, 3rem);
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold-champagne);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   LAYOUT UTILITIES
+──────────────────────────────────────────────────────────────────────── */
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 clamp(20px, 5vw, 60px);
+}
+
+.section {
+  padding: var(--section-pad) 0;
+  position: relative;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   RESPONSIVE VISIBILITY — defined here so inline styles never fight them
+──────────────────────────────────────────────────────────────────────── */
+.hide-mobile { display: flex; }
+.show-mobile { display: none; }
+
+@media (max-width: 768px) {
+  .hide-mobile { display: none !important; }
+  .show-mobile { display: inline-flex !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   GOLD TEXT & GRADIENTS
+──────────────────────────────────────────────────────────────────────── */
+.text-gold {
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gold-soft {
+  color: var(--gold-champagne);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   DIVIDERS & ORNAMENTS
+──────────────────────────────────────────────────────────────────────── */
+.divider-gold {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.divider-gold::before,
+.divider-gold::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-primary), transparent);
+}
+
+.ornament {
+  color: var(--gold-primary);
+  font-size: 1.2em;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   BUTTONS
+──────────────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 36px;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s var(--ease-luxury);
+  border-radius: 0;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.btn:hover::after { opacity: 1; }
+
+.btn-gold {
+  background: var(--grad-gold);
+  color: var(--purple-deepest);
+  box-shadow: var(--shadow-gold);
+}
+
+.btn-gold:hover {
+  box-shadow: 0 0 50px rgba(212, 175, 55, 0.45), 0 0 100px rgba(212, 175, 55, 0.15);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--gold-champagne);
+  border: var(--border-gold);
+  box-shadow: inset 0 0 0 0 var(--gold-primary);
+}
+
+.btn-outline:hover {
+  box-shadow: inset 0 0 0 1px var(--gold-primary);
+  color: var(--gold-glow);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 14px 20px;
+}
+
+.btn-ghost:hover { color: var(--gold-champagne); }
+
+/* ─────────────────────────────────────────────────────────────────────
+   CARDS
+──────────────────────────────────────────────────────────────────────── */
+.card-luxury {
+  background: linear-gradient(145deg, rgba(74, 22, 99, 0.5) 0%, rgba(42, 8, 56, 0.8) 100%);
+  border: var(--border-gold-dim);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.5s var(--ease-luxury);
+}
+
+.card-luxury::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.card-luxury:hover {
+  border-color: rgba(212, 175, 55, 0.4);
+  box-shadow: var(--shadow-card), var(--shadow-gold);
+  transform: translateY(-4px);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   GRAIN OVERLAY (applied via ::after on sections with .grain class)
+──────────────────────────────────────────────────────────────────────── */
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+  /* Ensure grain sits above content-bg but below content */
+  z-index: 0;
+}
+
+/* Any direct child inside a .grain section that needs to sit above the overlay */
+.grain > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   DECORATIVE LINES (Art Deco)
+──────────────────────────────────────────────────────────────────────── */
+.deco-line {
+  display: inline-block;
+  width: 48px;
+  height: 1px;
+  background: var(--grad-gold);
+  vertical-align: middle;
+  margin: 0 12px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   BADGE
+──────────────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  border: var(--border-gold);
+  color: var(--gold-champagne);
+  background: rgba(212, 175, 55, 0.08);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   FORM ELEMENTS
+──────────────────────────────────────────────────────────────────────── */
+input, textarea, select {
+  font-family: var(--font-body);
+  background: rgba(42, 8, 56, 0.8);
+  border: var(--border-gold-dim);
+  color: var(--text-body);
+  padding: 14px 18px;
+  font-size: 0.9rem;
+  width: 100%;
+  transition: all 0.3s var(--ease-luxury);
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--gold-primary);
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.15);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   FOCUS & ACCESSIBILITY
+──────────────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--gold-primary);
+  outline-offset: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SELECTION
+──────────────────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(212, 175, 55, 0.3);
+  color: var(--gold-glow);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   ANIMATIONS
+──────────────────────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes goldPulse {
+  0%, 100% { box-shadow: var(--shadow-gold); }
+  50%       { box-shadow: 0 0 50px rgba(212, 175, 55, 0.4), 0 0 120px rgba(212, 175, 55, 0.15); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-12px) rotate(0.5deg); }
+  66%       { transform: translateY(-6px) rotate(-0.5deg); }
+}
+
+@keyframes rotateOrb {
+  from { transform: rotate(0deg) translateX(120px) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(120px) rotate(-360deg); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes drawLine {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+/* ─── FAQ details icon rotation ──── */
+@keyframes detailsOpen {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(45deg); }
+}
+
+.animate-fade-up  { animation: fadeUp 0.9s var(--ease-luxury) both; }
+.animate-fade-in  { animation: fadeIn 0.9s var(--ease-luxury) both; }
+.animate-scale-in { animation: scaleIn 0.8s var(--ease-luxury) both; }
+.animate-float    { animation: float 6s ease-in-out infinite; }
+
+/* Staggered animation delays */
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.25s; }
+.delay-3 { animation-delay: 0.4s; }
+.delay-4 { animation-delay: 0.55s; }
+.delay-5 { animation-delay: 0.7s; }
+.delay-6 { animation-delay: 0.85s; }
+
+/* ─────────────────────────────────────────────────────────────────────
+   SHIMMER GOLD TEXT
+──────────────────────────────────────────────────────────────────────── */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--gold-rich) 0%,
+    var(--gold-champagne) 30%,
+    var(--gold-glow) 50%,
+    var(--gold-champagne) 70%,
+    var(--gold-rich) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   FAQ / DETAILS ELEMENT — animated +/× toggle
+──────────────────────────────────────────────────────────────────────── */
+details summary::-webkit-details-marker { display: none; }
+details summary { cursor: pointer; }
+
+/* Rotate the + icon to × when open */
+details[open] summary .faq-toggle {
+  transform: rotate(45deg);
+  color: var(--gold-champagne);
+}
+
+.faq-toggle {
+  display: inline-block;
+  transition: transform 0.3s var(--ease-luxury), color 0.3s;
+  color: var(--gold-primary);
+  font-size: 1.6rem;
+  font-weight: 300;
+  line-height: 1;
+  font-family: var(--font-display);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   FOOTER GRID (responsive handled here instead of inline style blocks)
+──────────────────────────────────────────────────────────────────────── */
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr repeat(4, 1fr);
+  gap: 48px;
+  padding: 72px 0 56px;
+}
+
+@media (max-width: 1024px) {
+  .footer-grid {
+    grid-template-columns: 1fr 1fr 1fr;
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
+@media (max-width: 640px) {
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 36px;
+    padding: 56px 0 40px;
   }
-  body {
-    @apply bg-background text-foreground;
+}
+
+@media (max-width: 400px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   RESPONSIVE UTILITIES
+──────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .btn { padding: 13px 28px; font-size: 0.78rem; }
+}
+
+@media (max-width: 480px) {
+  :root { --section-pad: 64px; }
 }

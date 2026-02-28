@@ -1,40 +1,123 @@
-'use client';
-import { useState } from 'react';
-import { apiClient } from '@/lib/api-client';
+// kujuana/apps/web/app/(auth)/forgot-password/page.tsx
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { AuthCard, InputField, FormError } from '../_shared'
 
 export default function ForgotPasswordPage() {
-  const [sent, setSent] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState<string | undefined>(undefined)
+  const [error, setError] = useState<string | undefined>(undefined)
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await apiClient.post('/auth/forgot-password', { email });
-    setSent(true);
-  }
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(undefined)
+    setMessage(undefined)
 
-  if (sent) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <p className="text-center">If that email exists, a reset link has been sent.</p>
-      </div>
-    );
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await fetch('/api/v1/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setError(data?.error?.message || 'Request failed. Please try again.')
+        return
+      }
+      setMessage('Reset link sent. Check your inbox.')
+    } catch {
+      setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-md space-y-4">
-        <h1 className="text-3xl font-bold">Reset Password</h1>
-        <input
+    <AuthCard
+      title="Reset your password"
+      subtitle="Enter your email and we will send a secure reset link."
+    >
+      <FormError message={error} />
+
+      {message && (
+        <div
+          style={{
+            background: 'rgba(212,175,55,0.08)',
+            border: '1px solid rgba(212,175,55,0.22)',
+            padding: '14px 18px',
+            marginBottom: '18px',
+            fontFamily: 'var(--font-jost)',
+            fontSize: '0.86rem',
+            color: 'rgba(232,210,124,0.9)',
+            lineHeight: 1.6,
+          }}
+        >
+          {message}
+        </div>
+      )}
+
+      <form
+        onSubmit={submit}
+        noValidate
+        style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}
+      >
+        <InputField
+          label="Email Address"
           type="email"
-          placeholder="Your email"
+          name="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full border rounded p-2"
+          placeholder="you@example.com"
+          required
+          autoComplete="email"
         />
-        <button type="submit" className="w-full bg-primary text-primary-foreground py-2 rounded">
-          Send reset link
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn btn-gold"
+          style={{
+            width: '100%',
+            padding: '16px',
+            fontSize: '0.8rem',
+            marginTop: '8px',
+            opacity: loading ? 0.7 : 1,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+          }}
+        >
+          {loading ? 'Sending...' : 'Send reset link'}
         </button>
       </form>
-    </div>
-  );
+
+      <div style={{ textAlign: 'center', marginTop: '18px' }}>
+        <Link
+          href="/login"
+          style={{
+            fontSize: '0.78rem',
+            color: 'var(--gold-primary)',
+            textDecoration: 'none',
+            fontFamily: 'var(--font-jost)',
+            letterSpacing: '0.06em',
+            borderBottom: '1px solid rgba(212,175,55,0.2)',
+            paddingBottom: '1px',
+          }}
+        >
+          Back to sign in
+        </Link>
+      </div>
+    </AuthCard>
+  )
 }

@@ -7,4 +7,5 @@ export const onboardingRouter: RouterType = Router();
 onboardingRouter.use(authenticate);
 onboardingRouter.get('/progress', onboardingController.getProgress);
 onboardingRouter.put('/step/:step', onboardingController.saveStep);
+onboardingRouter.post('/step/:step', onboardingController.saveStep);
 onboardingRouter.post('/submit', onboardingController.submit);

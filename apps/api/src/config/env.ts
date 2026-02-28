@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const inferredNodeEnv = process.env.NODE_ENV === 'production' ? 'production' : 'development';
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -34,6 +36,14 @@ const envSchema = z.object({
 
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().email().default('noreply@kujuana.com'),
+
+  ADMIN_INVITE_SECRET: z.string().default(
+    inferredNodeEnv === 'production' ? '' : 'bootstrap-secret-for-first-admin',
+  ),
+  DEV_ADMIN_EMAIL: z.string().email().default('admin@kujuana.com'),
+  DEV_ADMIN_PASSWORD: z.string().default('Admin@kujuana2024!'),
+  DEV_MANAGER_EMAIL: z.string().email().optional(),
+  DEV_MANAGER_PASSWORD: z.string().optional(),
 
   API_BASE_URL: z.string().url().default('http://localhost:4000'),
   WEB_BASE_URL: z.string().url().default('http://localhost:3000'),

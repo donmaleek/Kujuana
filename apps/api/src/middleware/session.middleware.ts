@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from './error.middleware.js';
 import { rotateRefreshToken } from '../services/auth/jwt.service.js';
-import { setRefreshTokenCookie } from '../utils/cookies.js';
+import { setAccessTokenCookies, setRefreshTokenCookie } from '../utils/cookies.js';
 import { resolveDeviceId } from '../utils/device.js';
 
 /**
@@ -22,6 +22,7 @@ export async function sessionRefresh(req: Request, res: Response, next: NextFunc
     );
 
     setRefreshTokenCookie(res, newRefreshToken);
+    setAccessTokenCookies(res, accessToken);
 
     res.json({ accessToken });
   } catch (err) {
