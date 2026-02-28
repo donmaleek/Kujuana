@@ -7,7 +7,7 @@ interface SelectFieldProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ label: string; value: string }>;
+  options: { label: string; value: string }[];
 }
 
 export function SelectField({ label, value, onChange, options }: SelectFieldProps) {

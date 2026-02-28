@@ -1,4 +1,5 @@
 import { Profile, type IProfileDocument } from '../../models/Profile.model.js';
+import { User } from '../../models/User.model.js';
 import type { PipelineStage } from 'mongoose';
 
 /**
@@ -39,14 +40,35 @@ export const atlasSearchService = {
     ];
 
     try {
-      return await Profile.aggregate(pipeline);
+      const candidates = (await Profile.aggregate(pipeline)) as unknown as IProfileDocument[];
+      return filterToMemberCandidates(candidates);
     } catch {
       // Fallback for local dev without Atlas Search
-      return Profile.find({
+      const candidates = await Profile.find({
         userId: { $ne: seekerProfile.userId },
         'basic.gender': targetGender,
         isSubmitted: true,
       }).limit(200);
+      return filterToMemberCandidates(candidates);
     }
   },
 };
+
+async function filterToMemberCandidates(
+  candidates: IProfileDocument[],
+): Promise<IProfileDocument[]> {
+  if (candidates.length === 0) return candidates;
+
+  const candidateIds = Array.from(new Set(candidates.map((candidate) => candidate.userId.toString())));
+  const visibleMembers = await User.find({
+    _id: { $in: candidateIds },
+    role: 'member',
+    isActive: true,
+    isSuspended: false,
+  })
+    .select('_id')
+    .lean();
+  const visibleMemberIds = new Set(visibleMembers.map((user) => user._id.toString()));
+
+  return candidates.filter((candidate) => visibleMemberIds.has(candidate.userId.toString()));
+}

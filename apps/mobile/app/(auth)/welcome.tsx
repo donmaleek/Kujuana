@@ -4,14 +4,9 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Cinzel_400Regular, Cinzel_600SemiBold, useFonts } from '@expo-google-fonts/cinzel';
+import { theme } from '@/lib/config/theme';
 
 export default function WelcomeScreen() {
-  const [fontsLoaded] = useFonts({
-    Cinzel_400Regular,
-    Cinzel_600SemiBold,
-  });
-
   const floatAnim = useRef(new Animated.Value(0)).current;
   const loadingAnim = useRef(new Animated.Value(0.2)).current;
   const hasNavigated = useRef(false);
@@ -75,8 +70,6 @@ export default function WelcomeScreen() {
     const timer = setTimeout(moveToNext, 2800);
     return () => clearTimeout(timer);
   }, []);
-
-  if (!fontsLoaded) return null;
 
   return (
     <LinearGradient
@@ -226,23 +219,23 @@ const styles = StyleSheet.create({
   },
   brand: {
     fontSize: 22,
-    color: '#FFD700',
+    color: theme.colors.primary,
     letterSpacing: 4,
     marginBottom: 28,
-    textShadowColor: 'rgba(255, 215, 0, 0.82)',
+    textShadowColor: 'rgba(212, 175, 55, 0.82)',
     textShadowRadius: 12,
-    fontFamily: 'Cinzel_400Regular',
+    fontFamily: theme.font.serif,
   },
   tagline: {
     fontSize: 24,
     textAlign: 'center',
-    color: '#FFD700',
+    color: theme.colors.goldGlow,
     width: '80%',
     marginBottom: 84,
-    textShadowColor: 'rgba(255, 215, 0, 0.64)',
+    textShadowColor: 'rgba(212, 175, 55, 0.64)',
     textShadowRadius: 12,
     lineHeight: 32,
-    fontFamily: 'Cinzel_400Regular',
+    fontFamily: theme.font.serif,
   },
   progressContainer: {
     width: '70%',
@@ -267,6 +260,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.72)',
     fontSize: 12,
     letterSpacing: 0.4,
-    fontFamily: 'Cinzel_400Regular',
+    fontFamily: theme.font.sans,
   },
 });

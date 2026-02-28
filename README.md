@@ -218,14 +218,14 @@ CLOUDINARY_PRIVATE_FOLDER=kujuana/private-photos
 # ── PAYMENTS: PESAPAL ─────────────────────────────────
 PESAPAL_CONSUMER_KEY=your-key
 PESAPAL_CONSUMER_SECRET=your-secret
-PESAPAL_IPN_URL=https://api.kujuana.com/api/v1/payments/pesapal/webhook
+PESAPAL_IPN_URL=https://api.kujuana.com/api/v1/payments/webhook/pesapal
 
 # ── PAYMENTS: M-PESA DARAJA ───────────────────────────
 MPESA_CONSUMER_KEY=your-key
 MPESA_CONSUMER_SECRET=your-secret
 MPESA_SHORTCODE=174379
 MPESA_PASSKEY=your-passkey
-MPESA_CALLBACK_URL=https://api.kujuana.com/api/v1/payments/mpesa/callback
+MPESA_CALLBACK_URL=https://api.kujuana.com/api/v1/payments/webhook/mpesa
 
 # ── PAYMENTS: FLUTTERWAVE ────────────────────────────
 FLUTTERWAVE_SECRET_KEY=FLWSECK_TEST-xxxx
@@ -248,6 +248,9 @@ NEXT_PUBLIC_CLOUDINARY_CLOUD=your-cloud-name
 
 # ── MOBILE (Expo — prefix EXPO_PUBLIC_) ──────────────
 EXPO_PUBLIC_API_URL=https://api.kujuana.com/api/v1
+
+# ── PAYMENTS BEHAVIOR ─────────────────────────────────
+PAYMENT_SIMULATION_ENABLED=false
 EXPO_PUBLIC_PUSH_PROJECT_ID=your-expo-project-id
 ```
 
@@ -541,7 +544,7 @@ POST /api/v1/payments/initiate
                 ▼
         Payment Gateway IPN/Webhook
                 │
-        POST /payments/<gateway>/webhook
+        POST /api/v1/payments/webhook/<gateway>
                 │
         HMAC signature verification
                 │
@@ -565,9 +568,11 @@ POST /api/v1/payments/initiate
 GET /api/v1/payments/:reference/status
 
 # 3. Daraja callback hits your server
-POST /api/v1/payments/mpesa/callback
+POST /api/v1/payments/webhook/mpesa
 # → Server updates Payment record, credits user
 ```
+
+If any gateway key is blank or still a placeholder like `<your-key>`, payment initiation returns `PAYMENT_CONFIGURATION_ERROR` until real credentials are set.
 
 ### Idempotency
 
@@ -633,9 +638,9 @@ All authenticated routes require: `Authorization: Bearer <access_token>`
 |---|---|---|
 | POST | `/payments/initiate` | Start payment (returns STK push or redirect URL) |
 | GET | `/payments/:ref/status` | Poll payment status |
-| POST | `/payments/pesapal/webhook` | Pesapal IPN (HMAC verified) |
-| POST | `/payments/flutterwave/webhook` | Flutterwave IPN (HMAC verified) |
-| POST | `/payments/mpesa/callback` | Daraja STK callback |
+| POST | `/payments/webhook/pesapal` | Pesapal IPN (HMAC verified) |
+| POST | `/payments/webhook/flutterwave` | Flutterwave IPN (HMAC verified) |
+| POST | `/payments/webhook/mpesa` | Daraja STK callback |
 
 ### Upload
 

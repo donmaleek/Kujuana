@@ -3,6 +3,7 @@ import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { safeCompare } from '../../utils/security.js';
 import { AppError } from '../../middleware/error.middleware.js';
+import { assertGatewayConfigured } from './gateway-config.js';
 
 interface FlwInitiateInput {
   paymentReference: string;
@@ -28,6 +29,12 @@ function gatewayMessage(value: unknown, fallback: string): string {
 
 export const flutterwaveGateway = {
   async initiate(input: FlwInitiateInput): Promise<string> {
+    assertGatewayConfigured('Flutterwave', {
+      FLUTTERWAVE_SECRET_KEY: env.FLUTTERWAVE_SECRET_KEY,
+      FLUTTERWAVE_PUBLIC_KEY: env.FLUTTERWAVE_PUBLIC_KEY,
+      FLUTTERWAVE_WEBHOOK_SECRET: env.FLUTTERWAVE_WEBHOOK_SECRET,
+    });
+
     const res = await fetch('https://api.flutterwave.com/v3/payments', {
       method: 'POST',
       headers: {

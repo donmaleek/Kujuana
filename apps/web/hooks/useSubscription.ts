@@ -51,7 +51,7 @@ export function useSubscription() {
   })
 
   const upgrade = useMutation({
-    mutationFn: (payload: { tier: Tier; method: 'mpesa' | 'pesapal' | 'flutterwave'; phone?: string }) =>
+    mutationFn: (payload: { tier: Tier; method: 'mpesa' | 'paystack' | 'pesapal' | 'flutterwave'; phone?: string }) =>
       apiFetch<{ reference: string; redirectUrl?: string; stk?: boolean }>('/subscriptions/upgrade', {
         method: 'POST',
         body: JSON.stringify(payload),

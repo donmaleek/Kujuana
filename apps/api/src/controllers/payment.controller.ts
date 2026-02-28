@@ -3,10 +3,11 @@ import { paymentsService } from '../services/payments/payments.service.js';
 import { webhookService } from '../services/payments/webhook.service.js';
 import { pesapalGateway } from '../services/payments/pesapal.gateway.js';
 import { flutterwaveGateway } from '../services/payments/flutterwave.gateway.js';
+import { paystackGateway } from '../services/payments/paystack.gateway.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { logger } from '../config/logger.js';
 import { Payment } from '../models/Payment.model.js';
-import type { InitiatePaymentInput } from '@kujuana/shared';
+import type { InitiatePaymentInput, PaymentPurpose } from '@kujuana/shared';
 
 function getRawPayload(req: Request): string {
   if (typeof req.rawBody === 'string') return req.rawBody;
@@ -21,36 +22,52 @@ export const paymentController = {
       const body = req.body as Record<string, unknown>;
 
       const method = typeof body['method'] === 'string' ? body['method'] : undefined;
-      const purpose = typeof body['purpose'] === 'string' ? body['purpose'] : undefined;
+      const purposeInput = typeof body['purpose'] === 'string' ? body['purpose'] : undefined;
+      const purpose = (() => {
+        const normalized = String(purposeInput ?? '').trim().toLowerCase();
+        if (!normalized) return undefined;
+        if (normalized === 'priority_5pack') return 'priority_bundle_5';
+        if (normalized === 'priority_10pack') return 'priority_bundle_10';
+        if (normalized === 'vip_addon') return 'vip_monthly';
+        return normalized;
+      })() as PaymentPurpose | undefined;
 
       const fallbackTier =
-        purpose === 'vip_monthly' || purpose === 'vip_addon'
+        purpose === 'vip_monthly'
           ? 'vip'
           : purpose?.startsWith('priority')
             ? 'priority'
             : 'standard';
 
+      const inferredGateway =
+        typeof body['gateway'] === 'string'
+          ? body['gateway'] === 'mpesa'
+            ? 'paystack'
+            : body['gateway']
+          : method === 'flutterwave'
+            ? 'flutterwave'
+            : method === 'mpesa' || method === 'paystack'
+              ? 'paystack'
+              : 'pesapal';
+
+      const inferredCurrency =
+        typeof body['currency'] === 'string'
+          ? body['currency']
+          : inferredGateway === 'flutterwave'
+            ? 'USD'
+            : 'KES';
+
       const payload: InitiatePaymentInput = {
         tier: (typeof body['tier'] === 'string' ? body['tier'] : fallbackTier) as InitiatePaymentInput['tier'],
-        gateway: (
-          typeof body['gateway'] === 'string'
-            ? body['gateway']
-            : method === 'flutterwave'
-              ? 'flutterwave'
-              : 'pesapal'
-        ) as InitiatePaymentInput['gateway'],
-        currency: (
-          typeof body['currency'] === 'string'
-            ? body['currency']
-            : method === 'flutterwave'
-              ? 'USD'
-              : 'KES'
-        ) as InitiatePaymentInput['currency'],
+        gateway: inferredGateway as InitiatePaymentInput['gateway'],
+        currency: inferredCurrency as InitiatePaymentInput['currency'],
+        purpose,
+        phone: typeof body['phone'] === 'string' ? body['phone'] : undefined,
         returnUrl: typeof body['returnUrl'] === 'string' ? body['returnUrl'] : undefined,
-      };
+      } as InitiatePaymentInput & { purpose?: PaymentPurpose; phone?: string };
 
       const result = await paymentsService.initiatePayment(req.user!.userId, payload);
-      if (method !== 'mpesa' && !result.checkoutUrl) {
+      if (payload.gateway !== 'mpesa' && !result.checkoutUrl) {
         return next(
           new AppError(
             'Payment gateway did not return a checkout URL. Please retry with a different method.',
@@ -63,7 +80,9 @@ export const paymentController = {
         ...result,
         reference: result.paymentReference,
         redirectUrl: result.checkoutUrl ?? null,
-        stk: method === 'mpesa',
+        stk: false,
+        message: typeof (result as { message?: unknown }).message === 'string' ? (result as { message?: string }).message : undefined,
+        simulated: Boolean((result as { simulated?: boolean }).simulated),
       });
     } catch (err) {
       next(err);
@@ -185,6 +204,132 @@ export const paymentController = {
         webhookPayload: req.body as Record<string, unknown>,
       });
       res.json({ status: 'OK' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async paystackWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      const signature = String(req.headers['x-paystack-signature'] ?? '').trim();
+      if (!signature) return next(new AppError('Missing webhook signature', 400));
+      const payload = getRawPayload(req);
+      if (!paystackGateway.verifySignature(payload, signature)) {
+        return next(new AppError('Invalid webhook signature', 400));
+      }
+
+      const payloadBody = req.body as {
+        event?: string;
+        data?: {
+          reference?: string;
+          id?: string | number;
+          status?: string;
+          gateway_response?: string;
+          message?: string;
+        };
+      };
+
+      const paymentReference = String(payloadBody.data?.reference ?? '').trim();
+      if (!paymentReference) {
+        logger.info({ event: payloadBody.event }, 'Ignoring Paystack webhook without payment reference');
+        return res.json({ status: 'IGNORED' });
+      }
+
+      const event = String(payloadBody.event ?? '').toLowerCase();
+      const status = String(payloadBody.data?.status ?? '').toLowerCase();
+      const gatewayTransactionRef = String(
+        payloadBody.data?.id ?? paymentReference,
+      ).trim();
+
+      if (event === 'charge.success' || status === 'success') {
+        await webhookService.handlePaymentSuccess({
+          paymentReference,
+          gateway: 'paystack',
+          gatewayTransactionRef,
+          webhookPayload: req.body as Record<string, unknown>,
+        });
+        return res.json({ status: 'OK' });
+      }
+
+      const isFailure = event === 'charge.failed' || status === 'failed' || status === 'abandoned';
+      if (!isFailure) {
+        logger.info({ event, status }, 'Ignoring non-terminal Paystack webhook event');
+        return res.json({ status: 'IGNORED' });
+      }
+
+      await webhookService.handlePaymentFailure({
+        paymentReference,
+        gateway: 'paystack',
+        gatewayTransactionRef,
+        failureReason:
+          String(payloadBody.data?.gateway_response ?? payloadBody.data?.message ?? 'Paystack charge failed') ||
+          'Paystack charge failed',
+        webhookPayload: req.body as Record<string, unknown>,
+      });
+      return res.json({ status: 'OK' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async mpesaWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      const payload = req.body as Record<string, unknown>;
+      const body = payload['Body'] as Record<string, unknown> | undefined;
+      const callback = body?.['stkCallback'] as Record<string, unknown> | undefined;
+
+      if (!callback) {
+        logger.warn({ payload }, 'M-Pesa webhook missing stkCallback payload');
+        return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+      }
+
+      const checkoutRequestId = String(
+        callback['CheckoutRequestID'] ?? callback['checkoutRequestId'] ?? '',
+      ).trim();
+      const merchantRequestId = String(
+        callback['MerchantRequestID'] ?? callback['merchantRequestId'] ?? '',
+      ).trim();
+      const resultCodeRaw = callback['ResultCode'] ?? callback['resultCode'];
+      const resultCode = Number(resultCodeRaw);
+      const resultDesc = String(callback['ResultDesc'] ?? callback['resultDesc'] ?? '').trim();
+
+      if (!checkoutRequestId && !merchantRequestId) {
+        logger.warn({ callback }, 'M-Pesa webhook missing request identifiers');
+        return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+      }
+
+      const callbackMetadata = callback['CallbackMetadata'] as Record<string, unknown> | undefined;
+      const callbackItems = Array.isArray(callbackMetadata?.['Item'])
+        ? (callbackMetadata?.['Item'] as Array<Record<string, unknown>>)
+        : [];
+      const receiptItem = callbackItems.find(
+        (item) => String(item['Name'] ?? '').toLowerCase() === 'mpesareceiptnumber',
+      );
+      const gatewayTransactionRef = String(
+        receiptItem?.['Value'] ?? checkoutRequestId ?? merchantRequestId,
+      ).trim();
+
+      const paymentReference = checkoutRequestId || merchantRequestId;
+      if (Number.isFinite(resultCode) && resultCode === 0) {
+        await webhookService.handlePaymentSuccess({
+          paymentReference,
+          gateway: 'mpesa',
+          gatewayTransactionRef,
+          webhookPayload: payload,
+        });
+      } else {
+        await webhookService.handlePaymentFailure({
+          paymentReference,
+          gateway: 'mpesa',
+          gatewayTransactionRef,
+          failureReason: `${resultDesc || 'M-Pesa payment failed'} (code ${
+            Number.isFinite(resultCode) ? String(resultCode) : 'unknown'
+          })`,
+          webhookPayload: payload,
+        });
+      }
+
+      return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
     } catch (err) {
       next(err);
     }

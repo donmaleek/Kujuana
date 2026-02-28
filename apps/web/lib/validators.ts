@@ -21,7 +21,7 @@ export const registerSchema = z.object({
 });
 
 export const paymentInitiateSchema = z.object({
-  method: z.enum(["mpesa", "pesapal", "flutterwave"]),
+  method: z.enum(["mpesa", "paystack", "pesapal", "flutterwave"]),
   phone: phoneE164.optional(),
   purpose: z.string().min(2),
 });

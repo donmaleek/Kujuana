@@ -220,7 +220,6 @@ function MatchCard({ match, index }: { match: MatchItem; index: number }) {
   const tc = tierColors(match.tier);
   const st = statusConfig(match.status, match.userAction);
 
-  const initials = String(index + 1).padStart(2, '0');
   const date = new Date(match.createdAt).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
@@ -294,7 +293,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <View style={styles.emptyWrap}>
       <Ionicons name="wifi-outline" size={40} color={theme.colors.error} />
-      <Text style={styles.emptyTitle}>Couldn't load matches</Text>
+      <Text style={styles.emptyTitle}>Could not load matches</Text>
       <Pressable style={styles.retryBtn} onPress={onRetry}>
         <Text style={styles.retryText}>Try again</Text>
       </Pressable>

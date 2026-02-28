@@ -8,9 +8,42 @@ import { emailService } from '../email/email.service.js';
 
 interface PaymentWebhookInput {
   paymentReference: string;
-  gateway: 'pesapal' | 'flutterwave';
+  gateway: 'pesapal' | 'flutterwave' | 'mpesa' | 'paystack';
   gatewayTransactionRef?: string;
   webhookPayload?: Record<string, unknown>;
+}
+
+interface PaymentWebhookFailureInput extends PaymentWebhookInput {
+  failureReason: string;
+}
+
+function buildSearchConditions(input: PaymentWebhookInput): Array<Record<string, unknown>> {
+  const reference = input.paymentReference.trim();
+  const conditions: Array<Record<string, unknown>> = [
+    { internalRef: reference },
+    { reference },
+    { idempotencyKey: reference },
+    { 'metadata.checkoutRequestId': reference },
+    { 'metadata.merchantRequestId': reference },
+  ];
+
+  if (input.gatewayTransactionRef) {
+    conditions.push({ reference: input.gatewayTransactionRef });
+    conditions.push({ 'metadata.checkoutRequestId': input.gatewayTransactionRef });
+    conditions.push({ 'metadata.merchantRequestId': input.gatewayTransactionRef });
+  }
+  if (mongoose.Types.ObjectId.isValid(reference)) {
+    conditions.push({ _id: reference });
+  }
+
+  return conditions;
+}
+
+async function findPaymentForWebhook(input: PaymentWebhookInput) {
+  return Payment.findOne({
+    gateway: input.gateway,
+    $or: buildSearchConditions(input),
+  });
 }
 
 function inferTierFromPayment(payment: {
@@ -45,22 +78,7 @@ export const webhookService = {
       return;
     }
 
-    const searchConditions: Array<Record<string, unknown>> = [
-      { internalRef: reference },
-      { reference },
-      { idempotencyKey: reference },
-    ];
-    if (input.gatewayTransactionRef) {
-      searchConditions.push({ reference: input.gatewayTransactionRef });
-    }
-    if (mongoose.Types.ObjectId.isValid(reference)) {
-      searchConditions.push({ _id: reference });
-    }
-
-    const payment = await Payment.findOne({
-      gateway: input.gateway,
-      $or: searchConditions,
-    });
+    const payment = await findPaymentForWebhook(input);
 
     if (!payment) {
       logger.warn({ reference, gateway: input.gateway }, 'Webhook: payment not found');
@@ -76,6 +94,7 @@ export const webhookService = {
     }
 
     payment.status = 'completed';
+    payment.failureReason = undefined;
     payment.reference = input.gatewayTransactionRef ?? payment.reference ?? reference;
     payment.webhookReceivedAt = new Date();
     payment.webhookPayload = input.webhookPayload;
@@ -160,5 +179,42 @@ export const webhookService = {
     }
 
     logger.info({ userId: payment.userId.toString(), tier }, 'Subscription activated');
+  },
+
+  async handlePaymentFailure(input: PaymentWebhookFailureInput) {
+    const reference = input.paymentReference.trim();
+    if (!reference) {
+      logger.warn({ gateway: input.gateway }, 'Webhook failure: missing payment reference');
+      return;
+    }
+
+    const payment = await findPaymentForWebhook(input);
+    if (!payment) {
+      logger.warn({ reference, gateway: input.gateway }, 'Webhook failure: payment not found');
+      return;
+    }
+    if (payment.status === 'completed') {
+      logger.warn(
+        { paymentId: payment._id.toString(), gateway: input.gateway },
+        'Webhook failure ignored for already-completed payment',
+      );
+      return;
+    }
+
+    payment.status = 'failed';
+    payment.failureReason = input.failureReason.slice(0, 500);
+    payment.reference = input.gatewayTransactionRef ?? payment.reference;
+    payment.webhookReceivedAt = new Date();
+    payment.webhookPayload = input.webhookPayload;
+    await payment.save();
+
+    logger.info(
+      {
+        paymentId: payment._id.toString(),
+        gateway: input.gateway,
+        reason: payment.failureReason,
+      },
+      'Payment marked failed from webhook',
+    );
   },
 };

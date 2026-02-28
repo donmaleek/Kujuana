@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { LogoutButton } from "@/components/shared/LogoutButton";
 
 export const metadata: Metadata = {
   title: "Kujuana Admin • Luxury Matchmaker Portal",
@@ -138,14 +139,10 @@ export default function AdminLayout({
                 </Button>
               </Link>
 
-              <form action="/api/v1/auth/logout" method="POST">
-                <Button
-                  type="submit"
-                  className="w-full bg-[#D4AF37] text-[#18021F] hover:bg-[#E8D27C]"
-                >
-                  Logout
-                </Button>
-              </form>
+              <LogoutButton
+                redirectTo="/"
+                className="w-full bg-[#D4AF37] text-[#18021F] hover:bg-[#E8D27C]"
+              />
 
               <div className="pt-2 text-center text-xs text-white/50">
                 © {new Date().getFullYear()} Kujuana
@@ -208,6 +205,14 @@ export default function AdminLayout({
                   Audit
                 </Button>
               </Link>
+            </div>
+
+            <div className="mt-3">
+              <LogoutButton
+                redirectTo="/"
+                size="sm"
+                className="w-full bg-[#D4AF37] text-[#18021F] hover:bg-[#E8D27C]"
+              />
             </div>
           </header>
 

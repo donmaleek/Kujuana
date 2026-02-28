@@ -33,8 +33,8 @@ function tierColors(tier: string): [string, string] {
 export default function ProfileTabScreen() {
   const profile = useAuthStore((state) => state.profile);
   const profileLoading = useAuthStore((state) => state.profileLoading);
-  const completeness = profile?.completeness?.overall ?? 0;
-  const tier = 'standard';
+  const completeness = profile?.completeness?.overall ?? profile?.profileCompleteness ?? 0;
+  const tier = profile?.tier ?? 'standard';
   const [activeSection, setActiveSection] = useState<SectionKey>('identity');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -229,11 +229,7 @@ export default function ProfileTabScreen() {
 
             {/* Section content */}
             <View style={styles.sectionContent}>
-              {profileQuery.isLoading ? (
-                <SkeletonBlock lines={4} gap={12} />
-              ) : (
-                <SectionContent profile={profile} section={activeSection} />
-              )}
+              <SectionContent profile={profile} section={activeSection} />
             </View>
           </View>
 

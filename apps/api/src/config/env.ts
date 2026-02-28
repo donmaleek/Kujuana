@@ -25,14 +25,28 @@ const envSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().min(1),
   CLOUDINARY_PRIVATE_FOLDER: z.string().default('kujuana/private'),
 
-  PESAPAL_CONSUMER_KEY: z.string().min(1),
-  PESAPAL_CONSUMER_SECRET: z.string().min(1),
+  PESAPAL_CONSUMER_KEY: z.string().default(''),
+  PESAPAL_CONSUMER_SECRET: z.string().default(''),
   PESAPAL_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
-  PESAPAL_IPN_URL: z.string().url(),
+  PESAPAL_IPN_URL: z.string().url().default('http://localhost:4000/api/v1/payments/webhook/pesapal'),
 
-  FLUTTERWAVE_PUBLIC_KEY: z.string().min(1),
-  FLUTTERWAVE_SECRET_KEY: z.string().min(1),
-  FLUTTERWAVE_WEBHOOK_SECRET: z.string().min(1),
+  FLUTTERWAVE_PUBLIC_KEY: z.string().default(''),
+  FLUTTERWAVE_SECRET_KEY: z.string().default(''),
+  FLUTTERWAVE_WEBHOOK_SECRET: z.string().default(''),
+
+  PAYSTACK_PUBLIC_KEY: z.string().default(''),
+  PAYSTACK_SECRET_KEY: z.string().default(''),
+  PAYSTACK_CALLBACK_URL: z.string().url().default('http://localhost:3000/subscription?status=return'),
+
+  MPESA_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
+  MPESA_CONSUMER_KEY: z.string().default(''),
+  MPESA_CONSUMER_SECRET: z.string().default(''),
+  MPESA_SHORTCODE: z.string().default(''),
+  MPESA_PASSKEY: z.string().default(''),
+  MPESA_CALLBACK_URL: z.string().url().default('http://localhost:4000/api/v1/payments/webhook/mpesa'),
+  MPESA_TRANSACTION_TYPE: z.enum(['CustomerPayBillOnline', 'CustomerBuyGoodsOnline']).default(
+    'CustomerPayBillOnline',
+  ),
 
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().email().default('noreply@kujuana.com'),
@@ -47,6 +61,7 @@ const envSchema = z.object({
 
   API_BASE_URL: z.string().url().default('http://localhost:4000'),
   WEB_BASE_URL: z.string().url().default('http://localhost:3000'),
+  PAYMENT_SIMULATION_ENABLED: z.coerce.boolean().default(false),
 });
 
 const parsed = envSchema.safeParse(process.env);

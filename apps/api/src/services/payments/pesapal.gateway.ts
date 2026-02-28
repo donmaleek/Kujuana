@@ -3,6 +3,7 @@ import { logger } from '../../config/logger.js';
 import { safeCompare } from '../../utils/security.js';
 import { createHmac } from 'crypto';
 import { AppError } from '../../middleware/error.middleware.js';
+import { assertGatewayConfigured } from './gateway-config.js';
 
 interface PesapalInitiateInput {
   paymentReference: string;
@@ -33,6 +34,12 @@ function gatewayMessage(value: unknown, fallback: string): string {
 
 export const pesapalGateway = {
   async getToken(): Promise<string> {
+    assertGatewayConfigured('Pesapal', {
+      PESAPAL_CONSUMER_KEY: env.PESAPAL_CONSUMER_KEY,
+      PESAPAL_CONSUMER_SECRET: env.PESAPAL_CONSUMER_SECRET,
+      PESAPAL_IPN_URL: env.PESAPAL_IPN_URL,
+    });
+
     const res = await fetch(`${BASE_URL}/api/Auth/RequestToken`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

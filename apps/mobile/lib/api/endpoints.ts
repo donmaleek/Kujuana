@@ -21,6 +21,11 @@ import type {
 import { z } from 'zod';
 import { apiClient } from '@/lib/api/client';
 import type {
+  AdminAuditItem,
+  AdminMemberItem,
+  AdminQueueItem,
+  AdminStatsResponse,
+  AuthSession,
   LoginResponse,
   MatchItem,
   NotificationListResponse,
@@ -42,6 +47,10 @@ export async function registerUser(input: RegisterInput): Promise<RegisterRespon
 export async function loginUser(input: LoginInput): Promise<LoginResponse> {
   const parsed = loginSchema.parse(input);
   return apiClient.post<LoginResponse>('/auth/login', parsed, false);
+}
+
+export async function getAuthSession(): Promise<AuthSession> {
+  return apiClient.get<AuthSession>('/auth/me');
 }
 
 export async function verifyEmail(input: { token: string; email: string }): Promise<{ message: string }> {
@@ -123,11 +132,52 @@ export async function cancelSubscription(): Promise<{ message: string }> {
 
 export async function initiatePayment(input: {
   tier: SubscriptionTier;
-  gateway: 'pesapal' | 'flutterwave';
+  gateway: 'pesapal' | 'flutterwave' | 'mpesa' | 'paystack';
   currency: 'KES' | 'USD';
+  purpose?:
+    | 'subscription_new'
+    | 'subscription_renewal'
+    | 'subscription_upgrade'
+    | 'addon_purchase'
+    | 'credit_topup'
+    | 'vip_monthly'
+    | 'priority_single'
+    | 'priority_bundle_5'
+    | 'priority_bundle_10';
+  phone?: string;
   returnUrl?: string;
 }): Promise<PaymentInitiationResponse> {
   return apiClient.post<PaymentInitiationResponse>('/payments/initiate', input);
+}
+
+export async function getPaymentStatus(reference: string): Promise<{ reference: string; status: string }> {
+  return apiClient.get<{ reference: string; status: string }>(`/payments/${encodeURIComponent(reference)}/status`);
+}
+
+export async function getAdminStats(): Promise<AdminStatsResponse> {
+  return apiClient.get<AdminStatsResponse>('/admin/stats');
+}
+
+export async function listAdminQueue(): Promise<AdminQueueItem[]> {
+  const payload = await apiClient.get<{ items?: AdminQueueItem[]; data?: AdminQueueItem[] } | AdminQueueItem[]>('/admin/queue');
+  if (Array.isArray(payload)) return payload;
+  return payload.items ?? payload.data ?? [];
+}
+
+export async function markAdminQueueInReview(requestId: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>(`/admin/queue/${encodeURIComponent(requestId)}/review`);
+}
+
+export async function listAdminMembers(): Promise<AdminMemberItem[]> {
+  const payload = await apiClient.get<{ items?: AdminMemberItem[]; data?: AdminMemberItem[] } | AdminMemberItem[]>('/admin/members');
+  if (Array.isArray(payload)) return payload;
+  return payload.items ?? payload.data ?? [];
+}
+
+export async function listAdminAudit(): Promise<AdminAuditItem[]> {
+  const payload = await apiClient.get<{ items?: AdminAuditItem[]; data?: AdminAuditItem[] } | AdminAuditItem[]>('/admin/audit');
+  if (Array.isArray(payload)) return payload;
+  return payload.items ?? payload.data ?? [];
 }
 
 export async function getUploadSignature(): Promise<SignedUploadParams> {

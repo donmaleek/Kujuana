@@ -153,6 +153,12 @@ export const onboardingController = {
           .sort((a, b) => a.order - b.order)
           .map((p, i) => ({ ...p, isPrimary: i === 0 }));
         profile.photos = photos as any;
+      } else if (stepConfig.key === 'plan') {
+        const stepPlan = parsed.data as { tier: PlanTier };
+        profile.basic = {
+          ...(profile.basic ?? {}),
+          plan: stepPlan.tier,
+        } as Record<string, unknown>;
       } else {
         (profile as any)[stepConfig.key] = parsed.data;
       }

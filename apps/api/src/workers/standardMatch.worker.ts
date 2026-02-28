@@ -1,6 +1,7 @@
 import { createWorker, createQueue } from '../config/bullmq.js';
 import { matchingService } from '../services/matching/matching.service.js';
 import { Profile } from '../models/Profile.model.js';
+import { User } from '../models/User.model.js';
 import { logger } from '../config/logger.js';
 
 const standardQueue = createQueue('standard-match');
@@ -15,7 +16,20 @@ export const standardMatchWorker = createWorker<StandardMatchData>(
   async (job) => {
     // Cron trigger: fan-out one job per submitted profile
     if (job.data.trigger === 'cron') {
-      const profiles = await Profile.find({ isSubmitted: true }).select('userId').lean();
+      const members = await User.find({
+        role: 'member',
+        isActive: true,
+        isSuspended: false,
+      })
+        .select('_id')
+        .lean();
+      const memberIds = members.map((member) => member._id);
+      const profiles = await Profile.find({
+        isSubmitted: true,
+        userId: { $in: memberIds },
+      })
+        .select('userId')
+        .lean();
       const jobs = profiles.map((p) => ({
         name: 'standard-match-user',
         data: { userId: String(p.userId) },

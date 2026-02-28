@@ -8,7 +8,7 @@ const STORAGE_KEY = 'kujuana_onboarding_v1'
 const TIER_RANK = { standard: 1, priority: 2, vip: 3 } as const
 
 type PlanTier = keyof typeof TIER_RANK
-type PaymentMethod = 'mpesa' | 'pesapal' | 'flutterwave'
+type PaymentMethod = 'mpesa' | 'paystack' | 'pesapal' | 'flutterwave'
 type PaymentState = 'idle' | 'pending' | 'completed' | 'failed' | 'cancelled'
 
 function readStore(): any {
@@ -411,7 +411,7 @@ export default function Step7ReviewPage() {
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={() => startPayment('mpesa')}
+                  onClick={() => startPayment('paystack')}
                   disabled={paymentBusy}
                   className="btn btn-gold"
                   style={{
@@ -423,7 +423,7 @@ export default function Step7ReviewPage() {
                     cursor: paymentBusy ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {paymentBusy ? 'Starting...' : 'Pay with M-Pesa'}
+                  {paymentBusy ? 'Starting...' : 'Pay with Paystack'}
                 </button>
                 <button
                   type="button"

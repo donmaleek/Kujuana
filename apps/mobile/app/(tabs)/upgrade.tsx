@@ -28,22 +28,34 @@ const tierColors = {
 const featureList = [
   { key: 'matchingCadence', label: 'Matching cadence' },
   { key: 'creditsPerCycle', label: 'Credits per cycle' },
-  { key: 'prioritySupport', label: 'Priority support' },
-  { key: 'curatedMatches', label: 'Curated matches' },
+  { key: 'privatePhotoAccess', label: 'Private photos' },
+  { key: 'matchmakerAccess', label: 'Matchmaker access' },
 ];
+
+function featureValue(tier: TierType, key: string): string {
+  const value = (TIER_CONFIG[tier] as Record<string, unknown>)[key];
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value ?? '—');
+}
 
 export default function UpgradeTabScreen() {
   const [tier, setTier] = useState<TierType>(SubscriptionTier.Priority);
-  const [gateway, setGateway] = useState<'pesapal' | 'flutterwave'>('pesapal');
+  const [gateway, setGateway] = useState<'paystack' | 'pesapal' | 'flutterwave'>('paystack');
   const [currency, setCurrency] = useState<'KES' | 'USD'>('KES');
   const [error, setError] = useState('');
-  const [checkoutUrl, setCheckoutUrl] = useState('');
+  const [checkoutState, setCheckoutState] = useState('');
 
   const paymentMutation = useMutation({
     mutationFn: initiatePayment,
     onSuccess: async (payload) => {
-      setCheckoutUrl(payload.checkoutUrl);
-      await WebBrowser.openBrowserAsync(payload.checkoutUrl);
+      const url = payload.checkoutUrl ?? payload.redirectUrl ?? undefined;
+      if (url) {
+        setCheckoutState('Checkout link opened in browser.');
+        await WebBrowser.openBrowserAsync(url);
+        return;
+      }
+
+      setCheckoutState(payload.message ?? 'Payment request started.');
     },
     onError: (err) => {
       if (err instanceof ApiError || err instanceof Error) {
@@ -83,7 +95,6 @@ export default function UpgradeTabScreen() {
               variant={tier === t ? 'primary' : 'secondary'}
               onPress={() => setTier(t)}
               disabled={tier === t}
-              style={{ marginTop: 8 }}
             />
           </View>
         ))}
@@ -102,10 +113,8 @@ export default function UpgradeTabScreen() {
             <View key={feat.key} style={styles.featureRow}>
               <Text style={styles.featureLabel}>{feat.label}</Text>
               {availableTiers.map((t) => (
-                <Text key={t} style={styles.featureValue}>
-                  {feat.key === 'prioritySupport' || feat.key === 'curatedMatches'
-                    ? TIER_CONFIG[t][feat.key] ? '✔️' : '—'
-                    : TIER_CONFIG[t][feat.key]}
+              <Text key={t} style={styles.featureValue}>
+                  {featureValue(t, feat.key)}
                 </Text>
               ))}
             </View>
@@ -117,10 +126,10 @@ export default function UpgradeTabScreen() {
       <SectionCard title="Payment Options">
         <Text style={styles.label}>Gateway</Text>
         <ChoiceChips
-          options={['pesapal', 'flutterwave']}
+          options={['paystack', 'pesapal', 'flutterwave']}
           selected={[gateway]}
           onChange={(values) => {
-            const value = values[0] as 'pesapal' | 'flutterwave' | undefined;
+            const value = values[0] as 'paystack' | 'pesapal' | 'flutterwave' | undefined;
             if (value) setGateway(value);
           }}
           multiple={false}
@@ -139,11 +148,12 @@ export default function UpgradeTabScreen() {
           label="Continue to Checkout"
           onPress={() => {
             setError('');
+            setCheckoutState('');
             paymentMutation.mutate({ tier, gateway, currency });
           }}
           loading={paymentMutation.isPending}
         />
-        {checkoutUrl ? <Text style={styles.small}>Checkout link opened in browser.</Text> : null}
+        {checkoutState ? <Text style={styles.small}>{checkoutState}</Text> : null}
       </SectionCard>
     </Screen>
   );
@@ -179,6 +189,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 7,
+    gap: 8,
   },
   tierCardActive: {
     backgroundColor: 'rgba(255,255,255,0.18)',

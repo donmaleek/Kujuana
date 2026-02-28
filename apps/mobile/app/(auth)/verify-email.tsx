@@ -2,12 +2,10 @@ import { useMemo, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { verifyEmail } from '@/lib/api/endpoints';
 import { ApiError } from '@/lib/api/types';
 import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
-import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { theme } from '@/lib/config/theme';
 
 export default function VerifyEmailScreen() {

@@ -17,7 +17,7 @@ export const authRouter: RouterType = Router();
 authRouter.post('/register', authRateLimitMiddleware, validate(registerSchema), authController.register);
 authRouter.post('/login', authRateLimitMiddleware, validate(loginSchema), authController.login);
 authRouter.post('/refresh', authRateLimitMiddleware, sessionRefresh);
-authRouter.post('/logout', authenticate, authController.logout);
+authRouter.post('/logout', authController.logout);
 authRouter.get('/me', authenticate, authController.me);
 authRouter.post(
   '/verify-email',

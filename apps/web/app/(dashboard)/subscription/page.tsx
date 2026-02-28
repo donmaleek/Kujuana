@@ -108,7 +108,7 @@ export default function SubscriptionPage() {
     []
   )
 
-  async function initiatePayment(purpose: string, method: 'mpesa' | 'pesapal' | 'flutterwave') {
+  async function initiatePayment(purpose: string, method: 'mpesa' | 'paystack' | 'pesapal' | 'flutterwave') {
     setBusy(purpose)
     setError(null)
     try {
@@ -118,8 +118,7 @@ export default function SubscriptionPage() {
       })
 
       // Typical behavior:
-      // - mpesa => returns { reference } for polling; you already handle STK UX elsewhere
-      // - card/global => returns { redirectUrl }
+      // - paystack/pesapal/flutterwave => returns { redirectUrl }
       const redirectUrl = res?.data?.redirectUrl || res?.redirectUrl
       if (redirectUrl) {
         window.location.href = redirectUrl
@@ -231,7 +230,7 @@ export default function SubscriptionPage() {
                 {c.id === 'priority' ? (
                   <>
                     <button
-                      onClick={() => initiatePayment('priority_single', 'mpesa')}
+                      onClick={() => initiatePayment('priority_single', 'paystack')}
                       disabled={busy === 'priority_single'}
                       className={cx(
                         'w-full rounded-xl border px-4 py-2 text-sm transition',
@@ -239,10 +238,10 @@ export default function SubscriptionPage() {
                         busy === 'priority_single' && 'opacity-70'
                       )}
                     >
-                      {busy === 'priority_single' ? 'Starting…' : 'Buy 1 match (KES 500) via M-Pesa'}
+                      {busy === 'priority_single' ? 'Starting…' : 'Buy 1 match (KES 500) via Paystack'}
                     </button>
                     <button
-                      onClick={() => initiatePayment('priority_5pack', 'mpesa')}
+                      onClick={() => initiatePayment('priority_5pack', 'paystack')}
                       disabled={busy === 'priority_5pack'}
                       className={cx(
                         'w-full rounded-xl border px-4 py-2 text-sm transition',
@@ -253,7 +252,7 @@ export default function SubscriptionPage() {
                       {busy === 'priority_5pack' ? 'Starting…' : 'Buy 5-pack (KES 2,000)'}
                     </button>
                     <button
-                      onClick={() => initiatePayment('priority_10pack', 'mpesa')}
+                      onClick={() => initiatePayment('priority_10pack', 'paystack')}
                       disabled={busy === 'priority_10pack'}
                       className={cx(
                         'w-full rounded-xl border px-4 py-2 text-sm transition',
@@ -267,7 +266,7 @@ export default function SubscriptionPage() {
                 ) : c.id === 'vip' ? (
                   <>
                     <button
-                      onClick={() => initiatePayment('vip_monthly', 'mpesa')}
+                      onClick={() => initiatePayment('vip_monthly', 'paystack')}
                       disabled={busy === 'vip_monthly'}
                       className={cx(
                         'w-full rounded-xl border px-4 py-2 text-sm transition',
@@ -275,7 +274,7 @@ export default function SubscriptionPage() {
                         busy === 'vip_monthly' && 'opacity-70'
                       )}
                     >
-                      {busy === 'vip_monthly' ? 'Starting…' : 'Upgrade to VIP via M-Pesa'}
+                      {busy === 'vip_monthly' ? 'Starting…' : 'Upgrade to VIP via Paystack'}
                     </button>
                     <button
                       onClick={() => initiatePayment('vip_monthly', 'pesapal')}

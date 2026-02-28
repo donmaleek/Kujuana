@@ -41,48 +41,51 @@ export const matchingController = {
         ),
       );
       const [users, profiles] = await Promise.all([
-        User.find({ _id: { $in: otherUserIds } }).select('fullName email'),
+        User.find({ _id: { $in: otherUserIds }, role: 'member' }).select('fullName email role'),
         Profile.find({ userId: { $in: otherUserIds } }).select('userId age location lifeVision photos'),
       ]);
       const userById = new Map(users.map((user) => [user._id.toString(), user]));
       const profileByUserId = new Map(profiles.map((profile) => [profile.userId.toString(), profile]));
 
-      const items = matches.map((match) => {
-        const mySideIsUser = match.userId.toString() === req.user!.userId;
-        const otherUserId = mySideIsUser ? match.matchedUserId.toString() : match.userId.toString();
-        const otherUser = userById.get(otherUserId);
-        const otherProfile = profileByUserId.get(otherUserId);
-        const locationLabel = otherProfile?.location?.city && otherProfile?.location?.country
-          ? `${otherProfile.location.city}, ${otherProfile.location.country}`
-          : otherProfile?.location?.city || otherProfile?.location?.country || null;
+      const items = matches
+        .map((match) => {
+          const mySideIsUser = match.userId.toString() === req.user!.userId;
+          const otherUserId = mySideIsUser ? match.matchedUserId.toString() : match.userId.toString();
+          const otherUser = userById.get(otherUserId);
+          if (!otherUser) return null;
+          const otherProfile = profileByUserId.get(otherUserId);
+          const locationLabel = otherProfile?.location?.city && otherProfile?.location?.country
+            ? `${otherProfile.location.city}, ${otherProfile.location.country}`
+            : otherProfile?.location?.city || otherProfile?.location?.country || null;
 
-        return {
-          id: match._id.toString(),
-          _id: match._id.toString(),
-          status: match.status,
-          score: match.score,
-          compatibilityScore: match.score,
-          tier: match.tier,
-          createdAt: (match as any).createdAt,
-          updatedAt: (match as any).updatedAt,
-          scoreBreakdown: match.scoreBreakdown,
-          breakdown: match.scoreBreakdown,
-          userAction: mySideIsUser ? match.userAction : match.matchedUserAction,
-          otherUserId,
-          other: {
-            id: otherUserId,
-            fullName: otherUser?.fullName ?? 'Match',
-            firstName: (otherUser?.fullName ?? 'Match').split(' ')[0] ?? 'Match',
-            age: otherProfile?.age ?? null,
-            location: locationLabel,
-            bio: otherProfile?.lifeVision ?? null,
-            blurredPhotoUrl: otherProfile?.photos?.[0]?.url ?? null,
-            photos: (otherProfile?.photos ?? [])
-              .map((photo) => ({ url: photo.url }))
-              .filter((photo) => typeof photo.url === 'string'),
-          },
-        };
-      });
+          return {
+            id: match._id.toString(),
+            _id: match._id.toString(),
+            status: match.status,
+            score: match.score,
+            compatibilityScore: match.score,
+            tier: match.tier,
+            createdAt: (match as any).createdAt,
+            updatedAt: (match as any).updatedAt,
+            scoreBreakdown: match.scoreBreakdown,
+            breakdown: match.scoreBreakdown,
+            userAction: mySideIsUser ? match.userAction : match.matchedUserAction,
+            otherUserId,
+            other: {
+              id: otherUserId,
+              fullName: otherUser?.fullName ?? 'Match',
+              firstName: (otherUser?.fullName ?? 'Match').split(' ')[0] ?? 'Match',
+              age: otherProfile?.age ?? null,
+              location: locationLabel,
+              bio: otherProfile?.lifeVision ?? null,
+              blurredPhotoUrl: otherProfile?.photos?.[0]?.url ?? null,
+              photos: (otherProfile?.photos ?? [])
+                .map((photo) => ({ url: photo.url }))
+                .filter((photo) => typeof photo.url === 'string'),
+            },
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
       const page = Number.parseInt(String(req.query['page'] ?? '1'), 10) || 1;
       const pageSize = Number.parseInt(String(req.query['pageSize'] ?? req.query['limit'] ?? '50'), 10) || 50;
@@ -119,9 +122,10 @@ export const matchingController = {
           ? match.matchedUserId.toString()
           : match.userId.toString();
       const [otherUser, otherProfile] = await Promise.all([
-        User.findById(otherUserId).select('fullName email'),
+        User.findOne({ _id: otherUserId, role: 'member' }).select('fullName email'),
         Profile.findOne({ userId: otherUserId }).select('age location lifeVision photos'),
       ]);
+      if (!otherUser) return next(new AppError('Match not found', 404));
       const locationLabel = otherProfile?.location?.city && otherProfile?.location?.country
         ? `${otherProfile.location.city}, ${otherProfile.location.country}`
         : otherProfile?.location?.city || otherProfile?.location?.country || null;

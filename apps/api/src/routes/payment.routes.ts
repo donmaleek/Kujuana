@@ -14,6 +14,10 @@ paymentRouter.get('/:reference/status', authenticate, paymentController.status);
 // Webhooks – no auth (gateway-signed)
 paymentRouter.post('/webhook/pesapal', paymentController.pesapalWebhook);
 paymentRouter.post('/webhook/flutterwave', paymentController.flutterwaveWebhook);
+paymentRouter.post('/webhook/paystack', paymentController.paystackWebhook);
+paymentRouter.post('/webhook/mpesa', paymentController.mpesaWebhook);
 // Backward-compatible aliases used by docs/older clients.
 paymentRouter.post('/pesapal/webhook', paymentController.pesapalWebhook);
 paymentRouter.post('/flutterwave/webhook', paymentController.flutterwaveWebhook);
+paymentRouter.post('/paystack/webhook', paymentController.paystackWebhook);
+paymentRouter.post('/mpesa/webhook', paymentController.mpesaWebhook);

@@ -202,14 +202,33 @@ export const authController = {
   async logout(req: Request, res: Response, next: NextFunction) {
     try {
       const deviceId = resolveDeviceId(req);
-      await DeviceSession.findOneAndUpdate(
-        { userId: req.user!.userId, deviceId },
-        { isRevoked: true, expiresAt: new Date() },
-      );
+      const sessionExpiry = new Date();
+
+      if (req.user?.userId) {
+        await DeviceSession.findOneAndUpdate(
+          { userId: req.user.userId, deviceId },
+          { isRevoked: true, expiresAt: sessionExpiry },
+        );
+      } else {
+        const refreshToken = typeof req.cookies?.refreshToken === 'string' ? req.cookies.refreshToken : '';
+        if (refreshToken) {
+          const refreshTokenHash = createHash('sha256').update(refreshToken).digest('hex');
+          await DeviceSession.findOneAndUpdate(
+            { refreshTokenHash },
+            { isRevoked: true, expiresAt: sessionExpiry },
+          );
+        }
+      }
+
       clearRefreshTokenCookie(res);
       clearAccessTokenCookies(res);
       clearRoleCookies(res);
       clearProfileCompletionCookies(res);
+
+      if (String(req.headers.accept ?? '').includes('text/html')) {
+        return res.redirect(302, '/');
+      }
+
       res.json({ message: 'Logged out' });
     } catch (err) {
       next(err);

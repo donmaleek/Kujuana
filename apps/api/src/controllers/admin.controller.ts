@@ -37,6 +37,8 @@ function parsePositiveInt(value: unknown, fallback: number): number {
   return parsed;
 }
 
+const MEMBER_ONLY_QUERY = { role: 'member' } as const;
+
 export const adminController = {
   async bootstrapAdmin(req: Request, res: Response, next: NextFunction) {
     try {
@@ -105,7 +107,8 @@ export const adminController = {
 
   async getStats(_req: Request, res: Response, next: NextFunction) {
     try {
-      const [totalUsers, [stats], [requestStats], [notificationStats], [paymentStats]] = await Promise.all([
+      const [totalMembers, totalAccounts, [stats], [requestStats], [notificationStats], [paymentStats]] = await Promise.all([
+        User.countDocuments(MEMBER_ONLY_QUERY),
         User.countDocuments(),
         Match.aggregate<{
           total: { count: number }[];
@@ -221,7 +224,11 @@ export const adminController = {
       const totalNotifications = notificationStats?.total[0]?.count ?? 0;
       const totalPayments = paymentStats?.total[0]?.count ?? 0;
       const completedPaymentAmount = paymentStats?.totalAmount[0]?.amount ?? 0;
-      const activeMembers = await User.countDocuments({ isActive: true, isSuspended: false });
+      const activeMembers = await User.countDocuments({
+        ...MEMBER_ONLY_QUERY,
+        isActive: true,
+        isSuspended: false,
+      });
       const vipMembers = await Subscription.countDocuments({ tier: 'vip', status: 'active' });
       const [priorityCreditsRow] = await Subscription.aggregate<{ total: number }>([
         { $group: { _id: null, total: { $sum: '$priorityCredits' } } },
@@ -260,7 +267,8 @@ export const adminController = {
       const matchesPending = (toCountMap(stats?.byStatus)['pending'] ?? 0) + (toCountMap(stats?.byStatus)['active'] ?? 0);
 
       res.json({
-        totalUsers,
+        totalUsers: totalMembers,
+        totalAccounts,
         totalMatches,
         activeMatches,
         matchedUsers,
@@ -283,7 +291,7 @@ export const adminController = {
         // Frontend admin dashboard compatibility fields.
         ok: true,
         generatedAt: new Date().toISOString(),
-        membersTotal: totalUsers,
+        membersTotal: totalMembers,
         activeMembers,
         matchesTotal: totalMatches,
         matchesPending,
@@ -409,7 +417,7 @@ export const adminController = {
       const tier = String(req.query['tier'] ?? '').trim().toLowerCase();
       const limit = Math.min(parsePositiveInt(req.query['limit'], 50), 100);
 
-      const userQuery: Record<string, unknown> = {};
+      const userQuery: Record<string, unknown> = { ...MEMBER_ONLY_QUERY };
       if (q) {
         const regex = new RegExp(q, 'i');
         userQuery.$or = [{ fullName: regex }, { email: regex }];

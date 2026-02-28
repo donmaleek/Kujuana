@@ -1,16 +1,20 @@
 # Kujuana Mobile
 
-Production mobile client for Kujuana built with Expo Router and TypeScript.
+Production Expo mobile client that mirrors the Kujuana web experience:
+
+- Same luxury purple/gold palette
+- Same typography direction (`Cormorant Garamond` display + `Jost` body)
+- Same core flow: auth, onboarding, plan selection, payment gate, profile, matchmaking
+- Admin console support for `admin`, `manager`, and `matchmaker` roles
 
 ## Scope
 
-The app mirrors your web + API platform with native UX:
-
 - Auth: register, login, email verification, secure session persistence
-- Onboarding: full 7-screen flow (plan, basic, background, photos, vision, preferences, review)
+- Onboarding: full 7-step flow with paid-plan payment enforcement before submission
 - Matches: list + detail + accept/decline + priority request
-- Billing: tier selection + payment initiation + gateway handoff
-- Profile + settings: completeness snapshot, subscription controls, notifications maintenance
+- Billing: Paystack/Pesapal/Flutterwave initiation + status polling
+- Profile + settings: completeness snapshot, subscription controls, sign-out
+- Admin mobile views: dashboard, queue, members, audit
 
 ## Stack
 
@@ -58,7 +62,41 @@ Then open the `exp://...exp.direct` URL shown in terminal in Expo Go.
 npx expo install expo-linear-gradient @expo/vector-icons expo-image-picker
 ```
 
-## App Store preparation checklist
+## Build Downloadable APK
+
+1. Install EAS CLI and login:
+
+```bash
+pnpm dlx eas-cli --version
+pnpm dlx eas-cli login
+```
+
+2. Set real project id in `apps/mobile/app.json`:
+
+- `expo.extra.eas.projectId`
+
+3. Build APK (internal/preview):
+
+```bash
+cd apps/mobile
+pnpm dlx eas-cli build --platform android --profile preview
+```
+
+4. Download artifact:
+
+- Open the build URL printed by EAS
+- Download the generated `.apk`
+
+### Production AAB (Play Store)
+
+```bash
+cd apps/mobile
+pnpm dlx eas-cli build --platform android --profile production
+```
+
+This generates `.aab` for Play Store submission.
+
+## Release Checklist
 
 1. Update identifiers in `apps/mobile/app.json`:
 - `ios.bundleIdentifier`
@@ -71,15 +109,4 @@ npx expo install expo-linear-gradient @expo/vector-icons expo-image-picker
 - `assets/splash-icon.png`
 - `assets/favicon.png`
 
-3. Configure EAS:
-
-```bash
-cd apps/mobile
-eas build:configure
-eas build --profile production --platform ios
-eas build --profile production --platform android
-eas submit --platform ios --latest
-eas submit --platform android --latest
-```
-
-4. Confirm production API URL in mobile env.
+3. Confirm production API URL in mobile env.

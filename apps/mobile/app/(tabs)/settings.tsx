@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { StyleSheet, Text, View, Image } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth-store';
 import { cancelSubscription, getSubscription, markAllNotificationsAsRead } from '@/lib/api/endpoints';
@@ -18,6 +19,8 @@ export default function SettingsTabScreen() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState('');
   const profile = useAuthStore((state) => state.profile);
+  const role = useAuthStore((state) => state.role);
+  const canAccessAdmin = role === 'admin' || role === 'manager' || role === 'matchmaker';
   const subscriptionQuery = useQuery({
     queryKey: ['subscription'],
     queryFn: getSubscription,
@@ -59,7 +62,7 @@ export default function SettingsTabScreen() {
           )}
         </View>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{profile?.basic?.fullName || 'Your Name'}</Text>
+          <Text style={styles.profileName}>{profile?.fullName || 'Your Name'}</Text>
           <Text style={styles.profileEmail}>{profile?.email || 'Email not set'}</Text>
         </View>
       </View>
@@ -71,7 +74,7 @@ export default function SettingsTabScreen() {
         <Ionicons name="card-outline" size={20} color={theme.colors.primary} style={styles.sectionIcon} />
         <Text style={styles.sectionHeader}>Subscription</Text>
       </View>
-      <SectionCard subtitle="Manage your current tier and billing state.">
+      <SectionCard title="Subscription" subtitle="Manage your current tier and billing state.">
         {subscriptionQuery.isLoading ? (
           <LoadingState label="Loading subscription..." />
         ) : subscriptionQuery.isError ? (
@@ -95,7 +98,7 @@ export default function SettingsTabScreen() {
         <Ionicons name="notifications-outline" size={20} color={theme.colors.primary} style={styles.sectionIcon} />
         <Text style={styles.sectionHeader}>Notifications</Text>
       </View>
-      <SectionCard subtitle="Maintenance actions">
+      <SectionCard title="Notifications" subtitle="Maintenance actions">
         <Button
           label="Mark All Notifications Read"
           onPress={() => readAllMutation.mutate()}
@@ -109,7 +112,14 @@ export default function SettingsTabScreen() {
         <Ionicons name="log-out-outline" size={20} color={theme.colors.primary} style={styles.sectionIcon} />
         <Text style={styles.sectionHeader}>Session</Text>
       </View>
-      <SectionCard>
+      <SectionCard title="Session">
+        {canAccessAdmin ? (
+          <Button
+            label="Open Admin Console"
+            variant="secondary"
+            onPress={() => router.push('/admin/dashboard')}
+          />
+        ) : null}
         <Button label="Sign Out" variant="danger" onPress={() => signOut()} />
       </SectionCard>
     </Screen>

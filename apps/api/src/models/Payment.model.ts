@@ -9,7 +9,7 @@ type LedgerPaymentPurpose =
   | 'priority_bundle_5'
   | 'priority_bundle_10';
 
-const GATEWAY_VALUES: PaymentGateway[] = ['pesapal', 'flutterwave'];
+const GATEWAY_VALUES: PaymentGateway[] = ['pesapal', 'flutterwave', 'mpesa', 'paystack'];
 const STATUS_VALUES: PaymentStatus[] = ['pending', 'completed', 'failed', 'refunded'];
 const PURPOSE_VALUES: LedgerPaymentPurpose[] = [
   'subscription_new',

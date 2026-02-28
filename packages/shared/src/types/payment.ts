@@ -22,7 +22,7 @@ export interface IPayment {
   updatedAt: Date;
 }
 
-export type PaymentGateway = 'pesapal' | 'flutterwave';
+export type PaymentGateway = 'pesapal' | 'flutterwave' | 'mpesa' | 'paystack';
 export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
 export type PaymentPurpose =
   | 'subscription_new'

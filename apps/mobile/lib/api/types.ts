@@ -30,9 +30,22 @@ export interface RegisterResponse {
   message: string;
 }
 
+export interface AuthSession {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'manager' | 'matchmaker' | 'user';
+  tier: SubscriptionTier | 'standard';
+  credits: number;
+  profileCompleted: boolean;
+  isEmailVerified: boolean;
+}
+
 export interface LoginResponse {
   accessToken: string;
   userId: string;
+  user?: AuthSession;
 }
 
 export interface RefreshResponse {
@@ -59,6 +72,11 @@ export interface ProfileCompleteness {
 export interface ProfileMe {
   _id: string;
   userId: string;
+  fullName?: string;
+  email?: string;
+  tier?: SubscriptionTier | 'standard';
+  credits?: number;
+  status?: string;
   onboardingStep: number;
   onboardingComplete: boolean;
   isSubmitted?: boolean;
@@ -67,6 +85,7 @@ export interface ProfileMe {
   vision?: Partial<Step5Input>;
   preferences?: Partial<Step6Input>;
   completeness: ProfileCompleteness;
+  profileCompleteness?: number;
   photos: ProfilePhoto[];
   [key: string]: unknown;
 }
@@ -128,16 +147,81 @@ export interface NotificationListResponse {
 export interface SubscriptionResponse {
   tier: SubscriptionTier | 'none';
   status: string;
+  isPaid?: boolean;
   credits?: number;
+  priorityCredits?: number;
   currentPeriodEnd?: string;
+  renewsAt?: string | null;
+  nextBillingAt?: string | null;
   cancelAtPeriodEnd?: boolean;
 }
 
 export interface PaymentInitiationResponse {
   paymentId: string;
   paymentReference: string;
-  checkoutUrl: string;
+  checkoutUrl?: string;
+  reference?: string;
+  redirectUrl?: string | null;
+  message?: string;
+  simulated?: boolean;
+  stk?: boolean;
   reused: boolean;
+}
+
+export interface AdminStatsResponse {
+  ok: boolean;
+  generatedAt: string;
+  membersTotal: number;
+  activeMembers: number;
+  matchesTotal: number;
+  matchesPending: number;
+  vipMembers: number;
+  priorityCreditsOutstanding: number;
+  revenueMonthKES: number;
+  revenueMonthUSD: number;
+}
+
+export interface AdminQueueItem {
+  id: string;
+  tier: 'priority' | 'vip';
+  kind: 'priority' | 'vip';
+  status: 'pending' | 'review' | 'introduced' | string;
+  createdAt: string;
+  requesterName: string;
+  requestedByName: string;
+  requestedByUserId: string;
+  requestedByEmail?: string;
+  candidateName: string;
+  score: number;
+  waitHours: number;
+  matchId?: string;
+  requestId?: string;
+}
+
+export interface AdminMemberItem {
+  id: string;
+  fullName: string;
+  email: string;
+  tier: SubscriptionTier | 'standard';
+  credits: number;
+  isActive: boolean;
+  profileCompleteness: number;
+  createdAt: string;
+  lastSeenAt?: string;
+}
+
+export interface AdminAuditItem {
+  id: string;
+  actor: string;
+  action: string;
+  target: string | null;
+  ip: string | null;
+  createdAt: string;
+  actorId?: string;
+  actorEmail?: string;
+  targetUserId?: string;
+  targetEmail?: string;
+  meta?: Record<string, unknown>;
 }
 
 export type OnboardingPayload = Step1Input | Step2Input | Step3Input | Step5Input | Step6Input | {

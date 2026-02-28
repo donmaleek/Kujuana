@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../store/auth.store'
 import { buildApiUrl } from '../lib/api-base'
 
-export type PaymentMethod = 'mpesa' | 'pesapal' | 'flutterwave'
+export type PaymentMethod = 'mpesa' | 'paystack' | 'pesapal' | 'flutterwave'
 export type PaymentPurpose =
   | 'priority_single'
   | 'priority_5pack'

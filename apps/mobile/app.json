@@ -6,12 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "kujuana",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F7F5EE"
+      "backgroundColor": "#18021F"
     },
     "plugins": [
       "expo-router",
@@ -44,7 +44,7 @@
       "package": "com.kujuana.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F7F5EE"
+        "backgroundColor": "#18021F"
       },
       "permissions": [
         "CAMERA",
