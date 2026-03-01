@@ -10,7 +10,7 @@ function localSignedUrl(publicId: string, ttlSeconds = SIGNED_URL_TTL_SECONDS): 
   const sig = crypto.createHmac('sha256', secret).update(`${publicId}:${exp}`).digest('hex');
   // Strip leading "photos/" for the URL path
   const urlPath = publicId.replace(/^photos\//, '');
-  return `${env.API_BASE_URL}/api/v1/uploads/serve/${urlPath}?exp=${exp}&sig=${sig}`;
+  return `${env.API_BASE_URL}/api/v1/upload/serve/${urlPath}?exp=${exp}&sig=${sig}`;
 }
 
 export function verifyLocalSignedToken(

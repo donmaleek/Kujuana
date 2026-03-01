@@ -23,7 +23,7 @@ export const uploadController = {
         if (profile && profile.photos.length >= MAX_PHOTOS) {
           return next(new AppError(`Maximum of ${MAX_PHOTOS} photos allowed`, 400));
         }
-        return res.json({ storageType: 'local', uploadUrl: `/api/v1/uploads/file` });
+        return res.json({ storageType: 'local', uploadUrl: `/api/v1/upload/file` });
       }
       const profile = await Profile.findOne({ userId: req.user!.userId }).select('photos');
       if (profile && profile.photos.length >= MAX_PHOTOS) {

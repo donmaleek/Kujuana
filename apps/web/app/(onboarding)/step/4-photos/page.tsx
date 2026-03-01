@@ -24,7 +24,7 @@ type PhotoItem = { publicId: string; previewUrl: string }
 async function uploadPhoto(file: File): Promise<PhotoItem> {
   const formData = new FormData()
   formData.append('photo', file)
-  const res = await fetch(buildApiUrl('/uploads/file'), {
+  const res = await fetch(buildApiUrl('/upload/file'), {
     method: 'POST',
     body: formData,
     credentials: 'include',
