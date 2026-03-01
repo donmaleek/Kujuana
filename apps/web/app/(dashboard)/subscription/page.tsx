@@ -1,10 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────
-// SUBSCRIPTION PAGE
-// Path: kujuana/apps/web/app/(dashboard)/subscription/page.tsx
-// ─────────────────────────────────────────────────────────────────────
-export const dynamic = 'force-dynamic'
-
 'use client'
+export const dynamic = 'force-dynamic'
+// SUBSCRIPTION PAGE
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
