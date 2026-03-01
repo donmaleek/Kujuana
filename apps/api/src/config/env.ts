@@ -20,9 +20,12 @@ const envSchema = z.object({
 
   ENCRYPTION_KEY: z.string().length(64), // 32 bytes hex-encoded
 
-  CLOUDINARY_CLOUD_NAME: z.string().min(1),
-  CLOUDINARY_API_KEY: z.string().min(1),
-  CLOUDINARY_API_SECRET: z.string().min(1),
+  STORAGE_TYPE: z.enum(['local', 'cloudinary']).default('local'),
+  UPLOADS_DIR: z.string().default('/var/www/kujuana/uploads'),
+
+  CLOUDINARY_CLOUD_NAME: z.string().default('placeholder'),
+  CLOUDINARY_API_KEY: z.string().default('placeholder'),
+  CLOUDINARY_API_SECRET: z.string().default('placeholder'),
   CLOUDINARY_PRIVATE_FOLDER: z.string().default('kujuana/private'),
 
   PESAPAL_CONSUMER_KEY: z.string().default(''),
@@ -52,8 +55,14 @@ const envSchema = z.object({
   STRIPE_PUBLISHABLE_KEY: z.string().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().default(''),
 
-  RESEND_API_KEY: z.string().min(1),
+  RESEND_API_KEY: z.string().default('placeholder'),
   EMAIL_FROM: z.string().email().default('noreply@kujuana.com'),
+
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().default(25),
+  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
 
   ADMIN_INVITE_SECRET: z.string().default(
     inferredNodeEnv === 'production' ? '' : 'bootstrap-secret-for-first-admin',

@@ -1,3 +1,4 @@
+import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
@@ -7,7 +8,22 @@ import type {
   NotificationType,
 } from '../../models/Notification.model.js';
 
-const resend = new Resend(env.RESEND_API_KEY);
+// ── Transport selection ────────────────────────────────────────────────────
+// Use nodemailer (SMTP) when SMTP_HOST is configured, otherwise fall back to Resend.
+const smtpTransport = env.SMTP_HOST
+  ? nodemailer.createTransport({
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE,
+      auth:
+        env.SMTP_USER && env.SMTP_PASS
+          ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
+          : undefined,
+    })
+  : null;
+
+const resendClient = env.SMTP_HOST ? null : new Resend(env.RESEND_API_KEY);
+const isPlaceholderResendKey = /^(placeholder|re_test)$/i.test(env.RESEND_API_KEY.trim());
 
 interface EmailNotificationContext {
   userId?: string;
@@ -32,9 +48,6 @@ export interface EmailDispatchResult {
   previewUrl?: string;
 }
 
-const isDev = env.NODE_ENV !== 'production';
-const isPlaceholderResendKey = /^re_test$/i.test(env.RESEND_API_KEY.trim());
-
 async function markNotificationFailed(
   notification: INotificationDocument | null,
   data?: Record<string, unknown>,
@@ -42,23 +55,18 @@ async function markNotificationFailed(
   if (!notification) return;
   notification.status = 'failed';
   notification.sentAt = new Date();
-  if (data) {
-    notification.data = {
-      ...(notification.data ?? {}),
-      ...data,
-    };
-  }
+  if (data) notification.data = { ...(notification.data ?? {}), ...data };
   await notification.save();
 }
 
 async function markNotificationSent(
   notification: INotificationDocument | null,
-  resendMessageId?: string,
+  messageId?: string,
 ) {
   if (!notification) return;
   notification.status = 'sent';
   notification.sentAt = new Date();
-  if (resendMessageId) notification.resendMessageId = resendMessageId;
+  if (messageId) notification.resendMessageId = messageId;
   await notification.save();
 }
 
@@ -80,51 +88,61 @@ async function sendWithAudit(input: SendEmailInput): Promise<EmailDispatchResult
     });
   }
 
-  if (isDev && isPlaceholderResendKey) {
+  // ── SMTP path (nodemailer) ────────────────────────────────────────────────
+  if (smtpTransport) {
+    try {
+      const info = await smtpTransport.sendMail({
+        from: env.EMAIL_FROM,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+      });
+      await markNotificationSent(notification, info.messageId);
+      logger.info({ to: input.to, subject: input.subject, messageId: info.messageId }, 'Email sent via SMTP');
+      return { delivered: true };
+    } catch (err) {
+      logger.warn({ err, to: input.to, subject: input.subject }, 'SMTP send failed; logging email preview');
+      await markNotificationFailed(notification, {
+        emailFallback: 'smtp_failed',
+        previewUrl: input.previewUrl,
+        reason: err instanceof Error ? err.message : 'unknown',
+      });
+      // Log email content so admin can see it even when SMTP is misconfigured
+      logger.info({ to: input.to, subject: input.subject, previewUrl: input.previewUrl, html: input.html }, 'EMAIL PREVIEW (SMTP failed)');
+      return { delivered: false, previewUrl: input.previewUrl };
+    }
+  }
+
+  // ── Resend fallback ───────────────────────────────────────────────────────
+  if (!resendClient || isPlaceholderResendKey) {
     logger.warn(
       { to: input.to, subject: input.subject, previewUrl: input.previewUrl },
-      'RESEND_API_KEY is placeholder; using development email preview fallback',
+      'No email transport configured; logging email preview',
     );
+    logger.info({ to: input.to, subject: input.subject, previewUrl: input.previewUrl, html: input.html }, 'EMAIL PREVIEW (no transport)');
     await markNotificationFailed(notification, {
-      emailFallback: 'dev_preview',
+      emailFallback: 'no_transport',
       previewUrl: input.previewUrl,
-      reason: 'RESEND_API_KEY placeholder',
     });
     return { delivered: false, previewUrl: input.previewUrl };
   }
 
   try {
-    const result = await resend.emails.send({
+    const result = await resendClient.emails.send({
       from: env.EMAIL_FROM,
       to: input.to,
       subject: input.subject,
       html: input.html,
     });
-
     const resendMessageId = (result as { data?: { id?: string } }).data?.id;
     const resendError = (result as { error?: { message?: string } }).error;
-    if (resendError) {
-      throw new Error(resendError.message ?? 'Resend API error');
-    }
-
+    if (resendError) throw new Error(resendError.message ?? 'Resend API error');
     await markNotificationSent(notification, resendMessageId);
     return { delivered: true };
   } catch (err) {
-    if (isDev && input.previewUrl) {
-      logger.warn(
-        { err, to: input.to, subject: input.subject, previewUrl: input.previewUrl },
-        'Email provider failed; using development email preview fallback',
-      );
-      await markNotificationFailed(notification, {
-        emailFallback: 'dev_preview',
-        previewUrl: input.previewUrl,
-        reason: err instanceof Error ? err.message : 'unknown_error',
-      });
-      return { delivered: false, previewUrl: input.previewUrl };
-    }
-
+    logger.warn({ err, to: input.to, previewUrl: input.previewUrl }, 'Resend failed');
     await markNotificationFailed(notification);
-    throw err;
+    return { delivered: false, previewUrl: input.previewUrl };
   }
 }
 

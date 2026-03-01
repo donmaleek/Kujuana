@@ -7,7 +7,9 @@ import { logger } from '../../config/logger.js';
 const OTP_TTL_SECONDS = 15 * 60; // 15 minutes
 const OTP_REDIS_TIMEOUT_MS = 400;
 const OTP_MEMORY_SWEEP_INTERVAL = 60_000;
-const isNonProd = env.NODE_ENV !== 'production';
+// Memory fallback is safe for single-instance servers; always enabled so OTP
+// works even when Upstash Redis is not configured (local server).
+const isNonProd = true;
 const memoryOtpStore = new Map<string, { token: string; expiresAt: number }>();
 let lastMemorySweepAt = 0;
 
