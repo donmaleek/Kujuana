@@ -8,7 +8,7 @@ import { emailService } from '../email/email.service.js';
 
 interface PaymentWebhookInput {
   paymentReference: string;
-  gateway: 'pesapal' | 'flutterwave' | 'mpesa' | 'paystack';
+  gateway: 'pesapal' | 'flutterwave' | 'mpesa' | 'paystack' | 'stripe';
   gatewayTransactionRef?: string;
   webhookPayload?: Record<string, unknown>;
 }
