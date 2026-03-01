@@ -1,151 +1,286 @@
-import { ENV } from '@/lib/config/env';
-import { clearSessionStorage, getOrCreateDeviceId, updateStoredAccessToken } from '@/lib/auth/secure-session';
-import { ApiError, type ApiErrorBody, type RefreshResponse } from '@/lib/api/types';
-import { useAuthStore } from '@/store/auth-store';
+import { API_CONFIG } from './config';
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type SessionUser = {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'manager' | 'matchmaker' | 'user';
+  tier: 'standard' | 'priority' | 'vip';
+  credits: number;
+  profileCompleted: boolean;
+  isEmailVerified: boolean;
+};
 
-interface RequestOptions {
-  method?: HttpMethod;
-  body?: unknown;
-  requiresAuth?: boolean;
-  headers?: HeadersInit;
-  retryOnUnauthorized?: boolean;
-}
+export type LoginResponse = {
+  accessToken: string;
+  userId: string;
+  user: SessionUser;
+};
 
-let refreshPromise: Promise<string | null> | null = null;
+export type RegisterPayload = {
+  fullName: string;
+  email: string;
+  phone: string;
+  password: string;
+  agreedToTerms: boolean;
+};
 
-function connectionHint(): string {
-  return `Unable to reach API at ${ENV.apiBaseUrl}. If you are on a phone, set EXPO_PUBLIC_API_URL in apps/mobile/.env to your computer IP (example: http://192.168.1.50:4000/api/v1), then restart Expo.`;
-}
+export type RegisterResponse = {
+  userId: string;
+  message: string;
+  verification?: {
+    delivered: boolean;
+    previewUrl?: string;
+  };
+};
 
-async function parseJsonSafely(response: Response): Promise<unknown> {
-  const raw = await response.text();
-  if (!raw) return null;
+export type ApiProfile = {
+  id: string;
+  userId: string;
+  fullName: string;
+  email: string;
+  age?: number | null;
+  occupation?: string | null;
+  religion?: string | null;
+  tier?: 'standard' | 'priority' | 'vip';
+  credits?: number;
+  status?: string;
+  completeness?: number;
+  profileCompleteness?: number;
+  bio?: string;
+  relationshipVision?: string;
+  location?: {
+    city?: string;
+    country?: string;
+    label?: string;
+  };
+  nonNegotiables?: string[];
+  preferences?: Record<string, unknown>;
+  settings?: Record<string, unknown>;
+};
 
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
+export type ApiSubscription = {
+  tier: 'standard' | 'priority' | 'vip';
+  status: string;
+  isPaid?: boolean;
+  credits?: number;
+  priorityCredits?: number;
+  renewsAt?: string | null;
+  nextBillingAt?: string | null;
+  cancelAtPeriodEnd?: boolean;
+};
+
+export type ApiMatch = {
+  id: string;
+  _id?: string;
+  status: string;
+  score: number;
+  compatibilityScore?: number;
+  tier: 'standard' | 'priority' | 'vip';
+  createdAt?: string;
+  updatedAt?: string;
+  userAction?: 'pending' | 'accepted' | 'declined' | string;
+  matchedUserAction?: 'pending' | 'accepted' | 'declined' | string;
+  other?: {
+    id: string;
+    fullName?: string;
+    firstName?: string;
+    age?: number | null;
+    location?: string | null;
+    bio?: string | null;
+    photos?: Array<{ url: string }>;
+    blurredPhotoUrl?: string | null;
+  };
+};
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  payload?: unknown;
+
+  constructor(message: string, status: number, code?: string, payload?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.payload = payload;
   }
 }
 
-async function ensureDeviceId(): Promise<string> {
-  const store = useAuthStore.getState();
-  if (store.deviceId) return store.deviceId;
+type RequestOptions = {
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+  body?: unknown;
+  token?: string;
+  deviceId?: string;
+  timeoutMs?: number;
+};
 
-  const deviceId = await getOrCreateDeviceId();
-  useAuthStore.getState().setDeviceId(deviceId);
-
-  return deviceId;
-}
-
-async function refreshAccessToken(deviceId: string): Promise<string | null> {
-  if (refreshPromise) return refreshPromise;
-
-  refreshPromise = (async () => {
-    let response: Response;
-    try {
-      response = await fetch(`${ENV.apiBaseUrl}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-device-id': deviceId,
-        },
-      });
-    } catch {
-      throw new ApiError(connectionHint(), 0);
+function firstValidationDetail(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null;
+  for (const value of Object.values(details as Record<string, unknown>)) {
+    if (Array.isArray(value) && value.length > 0) {
+      const first = value[0];
+      if (typeof first === 'string' && first.trim().length > 0) {
+        return first.trim();
+      }
     }
-
-    if (!response.ok) {
-      await clearSessionStorage();
-      useAuthStore.getState().setSignedOut();
-      return null;
-    }
-
-    const payload = (await parseJsonSafely(response)) as RefreshResponse;
-    if (!payload?.accessToken) {
-      await clearSessionStorage();
-      useAuthStore.getState().setSignedOut();
-      return null;
-    }
-
-    const currentState = useAuthStore.getState();
-    if (!currentState.userId) {
-      await clearSessionStorage();
-      useAuthStore.getState().setSignedOut();
-      return null;
-    }
-
-    useAuthStore.getState().setSignedIn(payload.accessToken, currentState.userId);
-    await updateStoredAccessToken(payload.accessToken);
-
-    return payload.accessToken;
-  })();
-
-  const token = await refreshPromise;
-  refreshPromise = null;
-
-  return token;
+  }
+  return null;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const requiresAuth = options.requiresAuth ?? true;
-  const retryOnUnauthorized = options.retryOnUnauthorized ?? true;
+  const {
+    method = 'GET',
+    body,
+    token,
+    deviceId,
+    timeoutMs = 15000,
+  } = options;
 
-  const deviceId = await ensureDeviceId();
-  const authState = useAuthStore.getState();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  let response: Response;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (deviceId) {
+    headers['x-device-id'] = deviceId;
+  }
+
   try {
-    response = await fetch(`${ENV.apiBaseUrl}${path}`, {
-      method: options.method ?? 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-device-id': deviceId,
-        ...(requiresAuth && authState.accessToken
-          ? { Authorization: `Bearer ${authState.accessToken}` }
-          : {}),
-        ...(options.headers ?? {}),
-      },
-      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+    const response = await fetch(`${API_CONFIG.baseUrl}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
-  } catch {
-    throw new ApiError(connectionHint(), 0);
-  }
 
-  if (response.status === 401 && requiresAuth && retryOnUnauthorized) {
-    const refreshedToken = await refreshAccessToken(deviceId);
-    if (refreshedToken) {
-      return request<T>(path, { ...options, retryOnUnauthorized: false });
+    const raw = await response.text();
+    let payload: any = null;
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        payload = null;
+      }
     }
+
+    if (!response.ok) {
+      const detailMessage = firstValidationDetail(payload?.details);
+      const payloadError =
+        typeof payload?.error === 'string'
+          ? payload.error
+          : payload?.error?.message;
+      const errorMessage =
+        (payloadError === 'Validation failed' && detailMessage ? detailMessage : null) ||
+        payloadError ||
+        detailMessage ||
+        payload?.message ||
+        `Request failed (${response.status})`;
+      const code = payload?.error?.code || payload?.code;
+      throw new ApiError(errorMessage, response.status, code, payload ?? raw);
+    }
+
+    return (payload ?? {}) as T;
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new ApiError('Request timed out. Please try again.', 408);
+    }
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(error?.message || 'Network request failed', 0);
+  } finally {
+    clearTimeout(timeout);
   }
-
-  if (!response.ok) {
-    const payload = (await parseJsonSafely(response)) as ApiErrorBody | null;
-    throw new ApiError(
-      payload?.error ?? `Request failed with status ${response.status}`,
-      response.status,
-      payload?.details,
-    );
-  }
-
-  if (response.status === 204) return {} as T;
-
-  return (await parseJsonSafely(response)) as T;
 }
 
 export const apiClient = {
-  get: <T>(path: string, requiresAuth = true, headers?: HeadersInit) =>
-    request<T>(path, { method: 'GET', requiresAuth, headers }),
-  post: <T>(path: string, body?: unknown, requiresAuth = true, headers?: HeadersInit) =>
-    request<T>(path, { method: 'POST', body, requiresAuth, headers }),
-  put: <T>(path: string, body?: unknown, requiresAuth = true, headers?: HeadersInit) =>
-    request<T>(path, { method: 'PUT', body, requiresAuth, headers }),
-  patch: <T>(path: string, body?: unknown, requiresAuth = true, headers?: HeadersInit) =>
-    request<T>(path, { method: 'PATCH', body, requiresAuth, headers }),
-  delete: <T>(path: string, requiresAuth = true, headers?: HeadersInit) =>
-    request<T>(path, { method: 'DELETE', requiresAuth, headers }),
+  register(payload: RegisterPayload, deviceId?: string) {
+    return request<RegisterResponse>('/auth/register', {
+      method: 'POST',
+      body: payload,
+      deviceId,
+    });
+  },
+
+  login(email: string, password: string, deviceId: string) {
+    return request<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: { email, password },
+      deviceId,
+    });
+  },
+
+  me(token: string, deviceId?: string) {
+    return request<SessionUser>('/auth/me', {
+      token,
+      deviceId,
+    });
+  },
+
+  logout(token?: string, deviceId?: string) {
+    return request<{ message: string }>('/auth/logout', {
+      method: 'POST',
+      token,
+      deviceId,
+    });
+  },
+
+  profileMe(token: string, deviceId?: string) {
+    return request<ApiProfile>('/profile/me', {
+      token,
+      deviceId,
+    });
+  },
+
+  updateProfile(token: string, patch: Record<string, unknown>, deviceId?: string) {
+    return request<ApiProfile>('/profile/me', {
+      method: 'PATCH',
+      token,
+      body: patch,
+      deviceId,
+    });
+  },
+
+  async listMatches(token: string, deviceId?: string): Promise<ApiMatch[]> {
+    const payload = await request<any>('/matches', {
+      token,
+      deviceId,
+    });
+
+    if (Array.isArray(payload?.items)) return payload.items as ApiMatch[];
+    if (Array.isArray(payload?.data?.items)) return payload.data.items as ApiMatch[];
+    if (Array.isArray(payload)) return payload as ApiMatch[];
+    return [];
+  },
+
+  respondToMatch(
+    token: string,
+    matchId: string,
+    action: 'accepted' | 'declined',
+    deviceId?: string,
+  ) {
+    return request<{ status: string; userAction: string }>('/matches/' + matchId + '/respond', {
+      method: 'PATCH',
+      token,
+      deviceId,
+      body: { action },
+    });
+  },
+
+  subscriptionMe(token: string, deviceId?: string) {
+    return request<ApiSubscription>('/subscriptions/me', {
+      token,
+      deviceId,
+    });
+  },
 };

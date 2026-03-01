@@ -14,29 +14,12 @@
       "backgroundColor": "#18021F"
     },
     "plugins": [
-      "expo-router",
-      "expo-secure-store",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.png",
-          "color": "#0A6847"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Kujuana uses your photos to complete your private profile.",
-          "cameraPermission": "Kujuana needs camera access if you want to take a profile photo directly."
-        }
-      ]
+      "expo-router"
     ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.kujuana.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "Upload your private profile photos.",
-        "NSPhotoLibraryUsageDescription": "Select private profile photos for Kujuana.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -47,8 +30,7 @@
         "backgroundColor": "#18021F"
       },
       "permissions": [
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "INTERNET"
       ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": true

@@ -1,209 +1,312 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { StyleSheet, Text, View, Image } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '@/store/auth-store';
-import { cancelSubscription, getSubscription, markAllNotificationsAsRead } from '@/lib/api/endpoints';
-import { signOut } from '@/lib/auth/bootstrap';
-import { ApiError } from '@/lib/api/types';
-import { Screen } from '@/components/ui/Screen';
-import { SectionCard } from '@/components/ui/SectionCard';
-import { Button } from '@/components/ui/Button';
-import { LoadingState } from '@/components/common/LoadingState';
-import { ErrorBanner } from '@/components/common/ErrorBanner';
-import { theme } from '@/lib/config/theme';
+import { useEffect, useState } from 'react';
+import type { ComponentProps } from 'react';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { AppScreen } from '@/components/ui/AppScreen';
+import { FadeIn } from '@/components/ui/FadeIn';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { GoldButton } from '@/components/ui/GoldButton';
+import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { COLORS, FONT, RADIUS } from '@/lib/theme/tokens';
+import { useAppData } from '@/lib/state/app-data';
+import { useSession } from '@/lib/state/session';
 
+function toBool(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  return fallback;
+}
 
-export default function SettingsTabScreen() {
-  const queryClient = useQueryClient();
-  const [message, setMessage] = useState('');
-  const profile = useAuthStore((state) => state.profile);
-  const role = useAuthStore((state) => state.role);
-  const canAccessAdmin = role === 'admin' || role === 'manager' || role === 'matchmaker';
-  const subscriptionQuery = useQuery({
-    queryKey: ['subscription'],
-    queryFn: getSubscription,
-  });
-  const cancelMutation = useMutation({
-    mutationFn: cancelSubscription,
-    onSuccess: (result) => {
-      setMessage(result.message);
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-    },
-    onError: (error) => {
-      if (error instanceof ApiError || error instanceof Error) {
-        setMessage(error.message);
-      } else {
-        setMessage('Unable to cancel subscription.');
-      }
-    },
-  });
-  const readAllMutation = useMutation({
-    mutationFn: markAllNotificationsAsRead,
-    onSuccess: (result) => {
-      setMessage(`Marked ${result.modifiedCount} notifications as read.`);
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    },
-  });
+export default function SettingsScreen() {
+  const router = useRouter();
+  const { user, signOut } = useSession();
+  const { profile, loading, refreshing, error, refreshAll, saveSettings } = useAppData();
+
+  const settings = (profile?.settings ?? {}) as Record<string, unknown>;
+
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const [privateMode, setPrivateMode] = useState(false);
+  const [availability, setAvailability] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPushEnabled(toBool(settings.pushNotifications, true));
+    setPrivateMode(toBool(settings.privateMode, false));
+    setAvailability(toBool(settings.acceptingIntros, true));
+  }, [settings.acceptingIntros, settings.privateMode, settings.pushNotifications]);
+
+  async function persistSettings(nextPatch: Record<string, unknown>) {
+    setSaving(true);
+    setLocalError(null);
+    try {
+      await saveSettings(nextPatch);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Unable to save settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <Screen>
-      <Text style={styles.screenTitle}>Settings</Text>
-      {/* Profile summary */}
-      <View style={styles.profileSummary}>
-        <View style={styles.avatarWrap}>
-          {profile?.photos?.[0]?.url ? (
-            <Image source={{ uri: profile.photos[0].url }} style={styles.avatarImg} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={32} color={theme.colors.primary} />
+    <AppScreen>
+      <FadeIn>
+        <TabScreenHeader
+          title="Settings"
+          subtitle="Control privacy, notifications, account access, and your matchmaking availability."
+        />
+      </FadeIn>
+
+      <FadeIn delay={110}>
+        <GlassCard>
+          <SettingRow
+            icon="bell-ring-outline"
+            label="Push notifications"
+            detail="Receive intro requests and conversation updates."
+            value={pushEnabled}
+            disabled={saving}
+            onValueChange={(next) => {
+              setPushEnabled(next);
+              void persistSettings({ pushNotifications: next });
+            }}
+          />
+          <Divider />
+          <SettingRow
+            icon="incognito"
+            label="Private mode"
+            detail="Hide your profile from broad discovery surfaces."
+            value={privateMode}
+            disabled={saving}
+            onValueChange={(next) => {
+              setPrivateMode(next);
+              void persistSettings({ privateMode: next });
+            }}
+          />
+          <Divider />
+          <SettingRow
+            icon="calendar-clock-outline"
+            label="Available for intros"
+            detail="Allow your profile to receive new curated intros."
+            value={availability}
+            disabled={saving}
+            onValueChange={(next) => {
+              setAvailability(next);
+              void persistSettings({ acceptingIntros: next });
+            }}
+          />
+
+          {saving || refreshing || loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color={COLORS.goldGlow} />
+              <Text style={styles.loadingText}>Syncing settings...</Text>
             </View>
-          )}
-        </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{profile?.fullName || 'Your Name'}</Text>
-          <Text style={styles.profileEmail}>{profile?.email || 'Email not set'}</Text>
-        </View>
-      </View>
+          ) : null}
 
-      {message ? <ErrorBanner message={message} /> : null}
+          {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
+          {error && !localError ? <Text style={styles.errorText}>{error}</Text> : null}
+        </GlassCard>
+      </FadeIn>
 
-      {/* Subscription Section */}
-      <View style={styles.sectionHeaderRow}>
-        <Ionicons name="card-outline" size={20} color={theme.colors.primary} style={styles.sectionIcon} />
-        <Text style={styles.sectionHeader}>Subscription</Text>
-      </View>
-      <SectionCard title="Subscription" subtitle="Manage your current tier and billing state.">
-        {subscriptionQuery.isLoading ? (
-          <LoadingState label="Loading subscription..." />
-        ) : subscriptionQuery.isError ? (
-          <ErrorBanner message="Unable to load subscription details." />
-        ) : (
-          <View style={styles.stack}>
-            <Text style={styles.row}>Tier: {subscriptionQuery.data?.tier ?? 'none'}</Text>
-            <Text style={styles.row}>Status: {subscriptionQuery.data?.status ?? 'none'}</Text>
-            <Button
-              label="Cancel At Period End"
-              variant="ghost"
-              onPress={() => cancelMutation.mutate()}
-              loading={cancelMutation.isPending}
+      <FadeIn delay={220}>
+        <GlassCard>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <View style={styles.actionGroup}>
+            <RowAction
+              icon="account-outline"
+              title={profile?.fullName || user?.fullName || 'Account'}
+              onPress={() => router.push('/(tabs)/profile')}
+            />
+            <RowAction
+              icon="email-outline"
+              title={profile?.email || user?.email || 'Email unavailable'}
+              onPress={async () => {
+                const email = profile?.email || user?.email;
+                if (!email) return;
+                try {
+                  await Linking.openURL(`mailto:${email}`);
+                  setActionMessage(null);
+                } catch {
+                  setActionMessage(`Email: ${email}`);
+                }
+              }}
+            />
+            <RowAction
+              icon="crown-outline"
+              title={`Tier: ${(profile?.tier || user?.tier || 'standard').toUpperCase()}`}
+              onPress={() => router.push('/(tabs)/subscription')}
+            />
+            <RowAction
+              icon="lifebuoy"
+              title="Help Centre"
+              onPress={() => router.push('/(tabs)/help')}
+            />
+            <RowAction
+              icon="message-text-outline"
+              title="Contact Us"
+              onPress={() => router.push('/(tabs)/contact')}
             />
           </View>
-        )}
-      </SectionCard>
+          {actionMessage ? <Text style={styles.actionMessage}>{actionMessage}</Text> : null}
+        </GlassCard>
+      </FadeIn>
 
-      {/* Notifications Section */}
-      <View style={styles.sectionHeaderRow}>
-        <Ionicons name="notifications-outline" size={20} color={theme.colors.primary} style={styles.sectionIcon} />
-        <Text style={styles.sectionHeader}>Notifications</Text>
-      </View>
-      <SectionCard title="Notifications" subtitle="Maintenance actions">
-        <Button
-          label="Mark All Notifications Read"
-          onPress={() => readAllMutation.mutate()}
-          variant="secondary"
-          loading={readAllMutation.isPending}
-        />
-      </SectionCard>
+      <FadeIn delay={300}>
+        <View style={styles.bottomActions}>
+          <GoldButton label="Refresh data" outlined style={styles.bottomButton} onPress={refreshAll} />
+          <GoldButton label="Sign out" style={styles.bottomButton} onPress={signOut} />
+        </View>
+      </FadeIn>
+    </AppScreen>
+  );
+}
 
-      {/* Session Section */}
-      <View style={styles.sectionHeaderRow}>
-        <Ionicons name="log-out-outline" size={20} color={theme.colors.primary} style={styles.sectionIcon} />
-        <Text style={styles.sectionHeader}>Session</Text>
+type SettingRowProps = {
+  icon: ComponentProps<typeof MaterialCommunityIcons>['name'];
+  label: string;
+  detail: string;
+  value: boolean;
+  disabled?: boolean;
+  onValueChange: (nextValue: boolean) => void;
+};
+
+function SettingRow({ icon, label, detail, value, disabled = false, onValueChange }: SettingRowProps) {
+  return (
+    <View style={styles.settingRow}>
+      <View style={styles.settingIconWrap}>
+        <MaterialCommunityIcons name={icon} size={18} color={COLORS.goldChampagne} />
       </View>
-      <SectionCard title="Session">
-        {canAccessAdmin ? (
-          <Button
-            label="Open Admin Console"
-            variant="secondary"
-            onPress={() => router.push('/admin/dashboard')}
-          />
-        ) : null}
-        <Button label="Sign Out" variant="danger" onPress={() => signOut()} />
-      </SectionCard>
-    </Screen>
+      <View style={styles.settingTextWrap}>
+        <Text style={styles.settingLabel}>{label}</Text>
+        <Text style={styles.settingDetail}>{detail}</Text>
+      </View>
+      <Switch
+        value={value}
+        disabled={disabled}
+        onValueChange={onValueChange}
+        trackColor={{ false: 'rgba(255,255,255,0.16)', true: 'rgba(212,175,55,0.45)' }}
+        thumbColor={value ? COLORS.goldGlow : 'rgba(255,255,255,0.75)'}
+      />
+    </View>
+  );
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
+type RowActionProps = {
+  icon: ComponentProps<typeof MaterialCommunityIcons>['name'];
+  title: string;
+  onPress?: () => void;
+};
+
+function RowAction({ icon, title, onPress }: RowActionProps) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionRow, pressed && onPress ? styles.actionRowPressed : null]}>
+      <MaterialCommunityIcons name={icon} size={18} color={COLORS.goldChampagne} />
+      <Text style={styles.actionTitle} numberOfLines={1}>{title}</Text>
+      {onPress ? <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.textMuted} /> : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screenTitle: {
-    fontSize: 28,
-    fontFamily: theme.font.sansBold,
-    color: theme.colors.primary,
-    marginBottom: 18,
-    marginTop: 2,
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  profileSummary: {
+  settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 18,
-    gap: 14,
-    alignSelf: 'center',
+    gap: 10,
+    paddingVertical: 2,
   },
-  avatarWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+  settingIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    backgroundColor: 'rgba(255,255,255,0.03)',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: theme.colors.primary,
   },
-  avatarImg: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-  },
-  avatarPlaceholder: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  profileInfo: {
+  settingTextWrap: {
     flex: 1,
-    justifyContent: 'center',
   },
-  profileName: {
-    fontFamily: theme.font.sansBold,
-    fontSize: 17,
-    color: theme.colors.text,
+  settingLabel: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.bodySemiBold,
+    fontSize: 14,
   },
-  profileEmail: {
-    fontFamily: theme.font.sans,
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginTop: 2,
+  settingDetail: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+    marginTop: 1,
+    lineHeight: 16,
   },
-  sectionHeaderRow: {
+  divider: {
+    height: 1,
+    marginVertical: 12,
+    backgroundColor: COLORS.strokeSoft,
+  },
+  loadingRow: {
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 18,
-    marginBottom: 2,
-    gap: 7,
-  },
-  sectionIcon: {
-    marginRight: 2,
-  },
-  sectionHeader: {
-    fontFamily: theme.font.sansBold,
-    fontSize: 16,
-    color: theme.colors.primary,
-    letterSpacing: 0.2,
-  },
-  stack: {
     gap: 8,
   },
-  row: {
-    fontFamily: theme.font.sans,
-    color: theme.colors.text,
-    fontSize: 15,
+  loadingText: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  errorText: {
+    marginTop: 8,
+    color: COLORS.danger,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  actionMessage: {
+    marginTop: 8,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  sectionTitle: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.display,
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  actionGroup: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    overflow: 'hidden',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(212,175,55,0.08)',
+  },
+  actionRowPressed: {
+    opacity: 0.8,
+  },
+  actionTitle: {
+    flex: 1,
+    color: COLORS.textBody,
+    fontFamily: FONT.body,
+    fontSize: 13,
+  },
+  bottomActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  bottomButton: {
+    flex: 1,
   },
 });

@@ -1,379 +1,443 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppScreen } from '@/components/ui/AppScreen';
+import { FadeIn } from '@/components/ui/FadeIn';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { GoldButton } from '@/components/ui/GoldButton';
+import { KujuanaLogo } from '@/components/ui/KujuanaLogo';
+import { API_CONFIG } from '@/lib/api/config';
+import { useSession } from '@/lib/state/session';
+import { COLORS, FONT, RADIUS } from '@/lib/theme/tokens';
 
-export default function LoginGatewayScreen() {
+export default function LoginScreen() {
+  const router = useRouter();
+  const { status, authError, signIn } = useSession();
+
+  const passwordRef = useRef<TextInput>(null);
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  if (status === 'signed_in') {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  async function onSubmit() {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password.trim()) {
+      setLocalError('Email and password are required.');
+      return;
+    }
+
+    setSubmitting(true);
+    setLocalError(null);
+
+    try {
+      await signIn(normalizedEmail, password);
+      router.replace('/(tabs)');
+    } catch {
+      // Error is surfaced by authError/localError state.
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const visibleError = localError || authError;
+  const showNetworkHint =
+    visibleError?.toLowerCase().includes('network') ||
+    visibleError?.toLowerCase().includes('timed out') ||
+    visibleError?.toLowerCase().includes('failed to fetch');
+
+  async function openSupport(path: '/help' | '/contact') {
+    const url = `${API_CONFIG.webUrl}${path}`;
+    try {
+      await Linking.openURL(url);
+      setLocalError(null);
+    } catch {
+      setLocalError(`Unable to open ${path === '/help' ? 'Help Centre' : 'Contact Us'}. Visit: ${url}`);
+    }
+  }
+
   return (
-    <LinearGradient
-      colors={['#140321', '#2A0B46', '#4B165E', '#2A0B46', '#140321']}
-      start={{ x: 0.15, y: 0.1 }}
-      end={{ x: 0.85, y: 0.95 }}
-      style={styles.bg}
-    >
-      <View style={[styles.glow, styles.glowTopRight]} />
-      <View style={[styles.glow, styles.glowBottomRight]} />
-      <View style={[styles.glow, styles.glowBottomLeft]} />
-
-      <View style={styles.container}>
-        <View style={styles.phoneFrame}>
-          <View style={styles.phoneNotch} />
-
-          <View style={styles.logoWrap}>
-            <View style={styles.logoStage}>
-              <View style={styles.logoHalo} />
-              <Image source={require('../../assets/kujuana_logo.png')} style={styles.logoImage} resizeMode="contain" />
-            </View>
-            <Text style={styles.brand}>KUJUANA</Text>
-            <Text style={styles.topTag}>Dating with intention.</Text>
-          </View>
-
-          <View style={styles.cardOuter}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.06)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.card}
-            >
-              <Text style={styles.title}>Welcome to Kujuana</Text>
-              <Text style={styles.subtitle}>Choose how you want to connect</Text>
-
-              <Pressable
-                style={{ marginTop: 16 }}
-                onPress={() => router.push('/(auth)/register')}
-              >
-                <LinearGradient
-                  colors={['#FFE680', '#FFD700', '#D9A300']}
-                  start={{ x: 0.1, y: 0.2 }}
-                  end={{ x: 0.9, y: 0.8 }}
-                  style={styles.primaryBtn}
-                >
-                  <Text style={styles.primaryBtnText}>Sign Up</Text>
-                </LinearGradient>
-              </Pressable>
-
-              <Pressable
-                style={{ marginTop: 12 }}
-                onPress={() => router.push('/(auth)/sign-in')}
-              >
-                <View style={styles.secondaryBtn}>
-                  <Text style={styles.secondaryBtnText}>Log In</Text>
-                </View>
-              </Pressable>
-
-              <View style={styles.divider} />
-
-              <TierCard
-                title="VIP Matching"
-                desc="Unlimited curated matches monthly"
-                onPress={() => router.push({ pathname: '/(auth)/register', params: { tier: 'vip' } })}
-              />
-              <TierCard
-                title="Priority Matching"
-                desc="Instant single match"
-                onPress={() => router.push({ pathname: '/(auth)/register', params: { tier: 'priority' } })}
-              />
-              <TierCard
-                title="Standard Matching"
-                desc="Free matching, takes time"
-                onPress={() => router.push({ pathname: '/(auth)/register', params: { tier: 'standard' } })}
-              />
-
-              <View style={styles.bottomNav}>
-                <NavItem icon="heart-outline" label="Matches" active />
-                <NavItem icon="chatbubble-outline" label="Messages" />
-                <NavItem icon="person-outline" label="Profile" />
-                <NavItem icon="hand-left-outline" label="Matchmaker" />
-              </View>
-
-              <View style={styles.footerLinksRow}>
-                <Text style={styles.footerLink}>Support</Text>
-                <Text style={styles.footerDot}>•</Text>
-                <Text style={styles.footerLink}>Kujuana Self-Matching</Text>
-                <Text style={styles.footerDot}>•</Text>
-                <Text style={styles.footerLink}>keithmuoki.com</Text>
-              </View>
-            </LinearGradient>
-          </View>
-        </View>
-      </View>
-    </LinearGradient>
-  );
-}
-
-function TierCard({
-  title,
-  desc,
-  onPress,
-}: {
-  title: string;
-  desc: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={{ marginTop: 12 }} onPress={onPress}>
-      <View style={styles.tierOuter}>
-        <LinearGradient
-          colors={['rgba(217,179,95,0.75)', 'rgba(217,179,95,0.20)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.tierBorder}
+    <AppScreen contentContainerStyle={styles.screenContent}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
         >
-          <View style={styles.tierInner}>
-            <View style={[styles.tierAccent, styles.tierAccentLeft]} />
-            <View style={[styles.tierAccent, styles.tierAccentRight]} />
+          <FadeIn>
+            <View style={styles.heroSection}>
+              <View style={styles.brandCard}>
+                <KujuanaLogo size={84} showWordmark={false} style={styles.brandLogo} />
+                <Text style={styles.brandName}>Kujuana</Text>
+                <Text style={styles.brandCaption}>Dating With Intention</Text>
+              </View>
+              <View style={styles.trustRow}>
+                <View style={styles.trustPill}>
+                  <MaterialCommunityIcons
+                    name="shield-check-outline"
+                    size={14}
+                    color={COLORS.goldGlow}
+                  />
+                  <Text style={styles.trustText}>Private</Text>
+                </View>
+                <View style={styles.trustPill}>
+                  <MaterialCommunityIcons name="heart-outline" size={14} color={COLORS.goldGlow} />
+                  <Text style={styles.trustText}>Intentional</Text>
+                </View>
+                <View style={styles.trustPill}>
+                  <MaterialCommunityIcons
+                    name="account-check-outline"
+                    size={14}
+                    color={COLORS.goldGlow}
+                  />
+                  <Text style={styles.trustText}>Real Profiles</Text>
+                </View>
+              </View>
+            </View>
+            <Text style={styles.signInTitle}>Sign in</Text>
+          </FadeIn>
 
-            <Text style={styles.tierTitle}>{title}</Text>
-            <Text style={styles.tierDesc}>{desc}</Text>
-          </View>
-        </LinearGradient>
-      </View>
-    </Pressable>
-  );
-}
+          <FadeIn delay={120}>
+            <GlassCard highlighted style={styles.formCard}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputRow}>
+                <MaterialCommunityIcons
+                  name="email-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  autoFocus
+                  editable={!submitting}
+                  placeholder="you@example.com"
+                  placeholderTextColor="rgba(196,168,130,0.75)"
+                  value={email}
+                  onChangeText={setEmail}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField((current) => (current === 'email' ? null : current))}
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  style={[
+                    styles.input,
+                    styles.inputWithIcon,
+                    focusedField === 'email' && styles.inputFocused,
+                    submitting && styles.inputDisabled,
+                  ]}
+                />
+              </View>
 
-function NavItem({
-  icon,
-  label,
-  active,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <View style={styles.navItem}>
-      <Ionicons
-        name={icon}
-        size={20}
-        color={active ? '#FFD700' : 'rgba(255,255,255,0.45)'}
-      />
-      <Text style={[styles.navLabel, active && { color: '#FFD700' }]}>
-        {label}
-      </Text>
-    </View>
+              <Text style={[styles.label, styles.labelSpacing]}>Password</Text>
+              <View style={styles.passwordWrap}>
+                <MaterialCommunityIcons
+                  name="lock-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  ref={passwordRef}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="password"
+                  textContentType="password"
+                  secureTextEntry={!showPassword}
+                  returnKeyType="done"
+                  editable={!submitting}
+                  placeholder="Your password"
+                  placeholderTextColor="rgba(196,168,130,0.75)"
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField((current) => (current === 'password' ? null : current))}
+                  onSubmitEditing={onSubmit}
+                  style={[
+                    styles.input,
+                    styles.passwordInput,
+                    focusedField === 'password' && styles.inputFocused,
+                    submitting && styles.inputDisabled,
+                  ]}
+                />
+                <Pressable
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
+                >
+                  <MaterialCommunityIcons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={18}
+                    color={COLORS.textMuted}
+                  />
+                </Pressable>
+              </View>
+              <View style={styles.helpRow}>
+                <Pressable onPress={() => void openSupport('/help')}>
+                  <Text style={styles.helpLinkText}>Need help signing in?</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.errorBlock}>
+                {visibleError ? <Text style={styles.errorText}>{visibleError}</Text> : null}
+              </View>
+
+              {showNetworkHint ? (
+                <Text style={styles.hintText}>{`Check API reachability: ${API_CONFIG.baseUrl}`}</Text>
+              ) : null}
+
+              {submitting ? (
+                <View style={styles.loadingButton}>
+                  <ActivityIndicator size="small" color={COLORS.goldGlow} />
+                  <Text style={styles.loadingText}>Signing in...</Text>
+                </View>
+              ) : (
+                <GoldButton label="Sign in" onPress={onSubmit} />
+              )}
+
+              <View style={styles.linksRow}>
+                <Pressable onPress={() => router.push('/(auth)/register')}>
+                  <Text style={styles.linkText}>Create account</Text>
+                </Pressable>
+                <Pressable onPress={() => void openSupport('/contact')}>
+                  <Text style={styles.linkText}>Connection help</Text>
+                </Pressable>
+              </View>
+            </GlassCard>
+          </FadeIn>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1 },
-  container: {
+  flex: {
     flex: 1,
-    alignItems: 'center',
+  },
+  screenContent: {
+    paddingBottom: 24,
+  },
+  content: {
+    flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 22,
+    paddingBottom: 24,
   },
-  glow: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 260,
-    backgroundColor: 'rgba(233, 197, 108, 0.22)',
-    opacity: 0.9,
-    transform: [{ scale: 1.2 }],
+  heroSection: {
+    paddingVertical: 2,
   },
-  glowTopRight: { top: -80, right: -120 },
-  glowBottomRight: { bottom: -110, right: -130 },
-  glowBottomLeft: { bottom: -150, left: -140, opacity: 0.55 },
-  phoneFrame: {
-    width: 340,
-    maxWidth: '100%',
-    borderRadius: 34,
-    paddingTop: 34,
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-    overflow: 'hidden',
-  },
-  phoneNotch: {
-    position: 'absolute',
-    top: 10,
+  brandCard: {
     alignSelf: 'center',
-    width: 120,
-    height: 26,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.60)',
-  },
-  logoWrap: { alignItems: 'center', marginTop: 6 },
-  logoStage: {
-    width: 228,
-    height: 228,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
     alignItems: 'center',
+    gap: 2,
+  },
+  brandLogo: {
     justifyContent: 'center',
   },
-  logoHalo: {
-    position: 'absolute',
-    width: 216,
-    height: 216,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 215, 0, 0.15)',
-    shadowColor: '#FFD700',
-    shadowOpacity: 0.48,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 0 },
+  brandName: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.display,
+    fontSize: 50,
+    letterSpacing: 1.1,
+    ...(Platform.OS === 'web'
+      ? ({
+          textShadow: '0px 3px 12px rgba(212, 175, 55, 0.42)',
+        } as any)
+      : {
+          textShadowColor: 'rgba(212,175,55,0.42)',
+          textShadowOffset: { width: 0, height: 3 },
+          textShadowRadius: 12,
+        }),
   },
-  logoImage: {
-    width: 210,
-    height: 210,
-    shadowColor: 'rgba(255, 215, 0, 0.9)',
-    shadowOpacity: 0.65,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  brand: {
-    marginTop: 10,
-    color: '#FFD700',
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: 3,
-    textShadowColor: 'rgba(255, 215, 0, 0.6)',
-    textShadowRadius: 10,
-  },
-  topTag: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 13,
-    textShadowColor: 'rgba(255, 215, 0, 0.45)',
-    textShadowRadius: 8,
-  },
-  cardOuter: {
-    marginTop: 14,
-    borderRadius: 24,
-    padding: 1.2,
-    borderColor: 'rgba(230, 196, 106, 0.22)',
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-  },
-  card: {
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  title: {
-    textAlign: 'center',
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  subtitle: {
-    marginTop: 6,
-    textAlign: 'center',
-    color: 'rgba(255,255,255,0.70)',
-    fontSize: 13.5,
-  },
-  primaryBtn: {
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnText: {
-    color: '#1C0C2A',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  secondaryBtn: {
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(230, 196, 106, 0.55)',
-  },
-  secondaryBtnText: {
-    color: '#FFD700',
-    fontSize: 16,
-    fontWeight: '800',
-    textShadowColor: 'rgba(255, 215, 0, 0.45)',
-    textShadowRadius: 7,
-  },
-  divider: {
-    marginTop: 16,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-  },
-  tierOuter: {
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  tierBorder: {
-    borderRadius: 18,
-    padding: 1.2,
-  },
-  tierInner: {
-    borderRadius: 17,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  tierAccent: {
-    position: 'absolute',
-    top: '50%',
-    width: 18,
-    height: 34,
-    marginTop: -17,
-    borderRadius: 18,
-    backgroundColor: 'rgba(230,196,106,0.55)',
-    opacity: 0.75,
-  },
-  tierAccentLeft: { left: -9 },
-  tierAccentRight: { right: -9 },
-  tierTitle: {
-    color: 'rgba(255,255,255,0.92)',
+  brandCaption: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodySemiBold,
     fontSize: 22,
-    fontWeight: '800',
+    letterSpacing: 0.85,
+    ...(Platform.OS === 'web'
+      ? ({
+          textShadow: '0px 0px 10px rgba(212, 175, 55, 0.85)',
+        } as any)
+      : {
+          textShadowColor: 'rgba(212,175,55,0.85)',
+          textShadowOffset: { width: 0, height: 0 },
+          textShadowRadius: 10,
+        }),
   },
-  tierDesc: {
-    marginTop: 6,
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12.5,
-  },
-  bottomNav: {
-    marginTop: 14,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.10)',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  navItem: {
-    width: '25%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  navLabel: {
-    fontSize: 11.5,
-    color: 'rgba(255,255,255,0.45)',
-  },
-  footerLinksRow: {
-    marginTop: 10,
+  trustRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 8,
   },
-  footerLink: {
-    color: 'rgba(255, 215, 0, 0.85)',
-    fontSize: 11.5,
+  trustPill: {
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(24,2,31,0.52)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-  footerDot: {
-    color: 'rgba(255,255,255,0.35)',
+  trustText: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodyMedium,
     fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  signInTitle: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.displayBold,
+    fontSize: 36,
+    lineHeight: 38,
+    marginTop: 14,
+    marginBottom: 16,
+    textAlign: 'center',
+    letterSpacing: 0.8,
+  },
+  formCard: {
+    paddingTop: 20,
+  },
+  label: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  inputRow: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  inputIcon: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 1,
+  },
+  labelSpacing: {
+    marginTop: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    color: COLORS.offWhite,
+    fontFamily: FONT.body,
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  inputWithIcon: {
+    paddingLeft: 38,
+  },
+  inputFocused: {
+    borderColor: COLORS.goldPrimary,
+    backgroundColor: 'rgba(212,175,55,0.08)',
+  },
+  inputDisabled: {
+    opacity: 0.76,
+  },
+  passwordWrap: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    paddingLeft: 38,
+    paddingRight: 42,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helpRow: {
+    marginTop: 8,
+    alignItems: 'flex-end',
+  },
+  helpLinkText: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.body,
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  errorBlock: {
+    minHeight: 22,
+    marginTop: 8,
+    justifyContent: 'center',
+  },
+  errorText: {
+    color: COLORS.danger,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  hintText: {
+    marginTop: 4,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  loadingButton: {
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(212,175,55,0.14)',
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodySemiBold,
+    letterSpacing: 0.5,
+  },
+  linksRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  linkText: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
 });

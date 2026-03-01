@@ -95,9 +95,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setUser(u)
 
       // Completion is determined by onboarding status first, not strict percentage.
+      // Incomplete users should land on profile first, then choose whether to continue onboarding.
       const profileReady = u.onboardingComplete || u.profileCompleteness >= 100
-      if (!profileReady && !pathname?.startsWith('/step')) {
-        router.replace('/step/1-plan')
+      if (!profileReady && pathname !== '/profile') {
+        router.replace('/profile')
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to load dashboard')

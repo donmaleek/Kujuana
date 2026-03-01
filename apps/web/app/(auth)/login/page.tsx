@@ -80,13 +80,10 @@ export default function LoginPage() {
       }
 
       const role = String(data?.user?.role || '').toLowerCase()
-      const profileCompleted = Boolean(data?.user?.profileCompleted)
       const defaultDestination =
         role === 'admin' || role === 'manager' || role === 'matchmaker'
           ? '/admin/dashboard'
-          : profileCompleted
-          ? '/profile'
-          : '/step/1-plan'
+          : '/profile'
       const destination = requestedNextPath || defaultDestination
       router.push(destination)
     } catch {

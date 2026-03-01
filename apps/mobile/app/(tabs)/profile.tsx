@@ -1,572 +1,745 @@
-import { useState } from 'react';
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuthStore } from '@/store/auth-store';
-import { refreshProfile } from '@/lib/auth/bootstrap';
-import { type ProfileMe } from '@/lib/api/types';
-import { humanize } from '@/lib/utils/format';
-import { theme } from '@/lib/config/theme';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { AppScreen } from '@/components/ui/AppScreen';
+import { FadeIn } from '@/components/ui/FadeIn';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { GoldButton } from '@/components/ui/GoldButton';
+import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { COLORS, FONT, RADIUS } from '@/lib/theme/tokens';
+import { useAppData } from '@/lib/state/app-data';
+import { useSession } from '@/lib/state/session';
 
-type SectionKey = 'identity' | 'lifestyle' | 'vision' | 'preferences';
-
-const SECTION_LABELS: Record<SectionKey, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  identity: { label: 'Identity', icon: 'person-outline' },
-  lifestyle: { label: 'Lifestyle', icon: 'leaf-outline' },
-  vision: { label: 'Vision', icon: 'heart-outline' },
-  preferences: { label: 'Preferences', icon: 'options-outline' },
-};
-
-function completenessColor(pct: number) {
-  if (pct >= 80) return theme.colors.success;
-  if (pct >= 50) return theme.colors.primary;
-  return theme.colors.error;
+function formatPreferenceLines(preferences: Record<string, unknown> | undefined): string[] {
+  if (!preferences) return [];
+  return Object.entries(preferences)
+    .map(([key, value]) => {
+      if (value == null || value === '') return null;
+      const label = key
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, (char) => char.toUpperCase());
+      const rendered = Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value);
+      return `${label}: ${rendered}`;
+    })
+    .filter((line): line is string => Boolean(line))
+    .slice(0, 6);
 }
 
-function tierColors(tier: string): [string, string] {
-  if (tier === 'vip') return ['#FFE680', '#D9A300'];
-  if (tier === 'priority') return ['#C084FC', '#7C3AED'];
-  return ['#6EDBB0', '#059669'];
+function parseNonNegotiables(input: string): string[] {
+  return input
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 10);
 }
 
-export default function ProfileTabScreen() {
-  const profile = useAuthStore((state) => state.profile);
-  const profileLoading = useAuthStore((state) => state.profileLoading);
-  const completeness = profile?.completeness?.overall ?? profile?.profileCompleteness ?? 0;
-  const tier = profile?.tier ?? 'standard';
-  const [activeSection, setActiveSection] = useState<SectionKey>('identity');
-  const [refreshing, setRefreshing] = useState(false);
+const BIO_VISION_MIN_LENGTH = 60;
 
-  const primaryPhoto = profile?.photos?.find((p) => p.isPrimary) ?? profile?.photos?.[0];
+export default function ProfileScreen() {
+  const router = useRouter();
+  const { user } = useSession();
+  const { profile, matches, loading, error, refreshAll, updateProfile } = useAppData();
 
-  async function handleRefresh() {
-    setRefreshing(true);
+  const completion = Math.min(100, Math.max(0, Math.round(profile?.completeness ?? 0)));
+  const fullName = profile?.fullName || user?.fullName || 'Member';
+  const age = profile?.age;
+  const city = profile?.location?.label || profile?.location?.city || 'Location pending';
+  const tier = (profile?.tier || user?.tier || 'standard').toUpperCase();
+  const bio = profile?.bio || profile?.relationshipVision || 'Tell us about your relationship vision to increase compatibility quality.';
+  const profileLifeVision = (profile as { lifeVision?: string } | null)?.lifeVision || '';
+  const values = (profile?.nonNegotiables ?? []).slice(0, 8);
+  const preferences = formatPreferenceLines(profile?.preferences as Record<string, unknown> | undefined);
+  const pendingIntros = matches.filter((match) => match.userAction === 'pending').length;
+  const acceptedIntros = matches.filter((match) => match.userAction === 'accepted').length;
+
+  const [editFullName, setEditFullName] = useState('');
+  const [editOccupation, setEditOccupation] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editVision, setEditVision] = useState('');
+  const [editNonNegotiables, setEditNonNegotiables] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savingBioVision, setSavingBioVision] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const formBusy = saving || savingBioVision;
+  const bioLength = editBio.trim().length;
+  const visionLength = editVision.trim().length;
+  const bioVisionReady = bioLength >= BIO_VISION_MIN_LENGTH && visionLength >= BIO_VISION_MIN_LENGTH;
+
+  useEffect(() => {
+    setEditFullName(profile?.fullName || user?.fullName || '');
+    setEditOccupation(profile?.occupation || '');
+    setEditCity(profile?.location?.city || '');
+    setEditCountry(profile?.location?.country || '');
+    setEditBio(profile?.bio || '');
+    const fallbackVision = profile?.relationshipVision || profileLifeVision || '';
+    setEditVision(fallbackVision);
+    setEditNonNegotiables((profile?.nonNegotiables || []).join('\n'));
+  }, [
+    profile?.bio,
+    profile?.fullName,
+    profile?.location?.city,
+    profile?.location?.country,
+    profile?.nonNegotiables,
+    profile?.occupation,
+    profileLifeVision,
+    profile?.relationshipVision,
+    user?.fullName,
+  ]);
+
+  const nextSteps = useMemo(
+    () => [
+      completion < 100
+        ? {
+            id: 'complete-profile',
+            title: bioVisionReady ? 'Complete your profile details' : 'Complete bio and vision',
+            subtitle: bioVisionReady
+              ? 'Use the form below to improve your profile completeness score.'
+              : `Write at least ${BIO_VISION_MIN_LENGTH} characters in both bio and relationship vision to unlock profile completion.`,
+            action: bioVisionReady
+              ? `${completion}% done`
+              : `${Math.min(bioLength, BIO_VISION_MIN_LENGTH)}/${BIO_VISION_MIN_LENGTH} • ${Math.min(visionLength, BIO_VISION_MIN_LENGTH)}/${BIO_VISION_MIN_LENGTH}`,
+            cta: bioVisionReady ? 'Fill details below' : 'Update below',
+            onPress: () => {
+              if (!bioVisionReady) {
+                setFormSuccess(null);
+                setFormError(`Bio and relationship vision must each be at least ${BIO_VISION_MIN_LENGTH} characters.`);
+              }
+            },
+          }
+        : null,
+      pendingIntros > 0
+        ? {
+            id: 'pending-intros',
+            title: `Respond to ${pendingIntros} pending ${pendingIntros === 1 ? 'intro' : 'intros'}`,
+            subtitle: 'Quick responses improve your placement in active matching queues.',
+            action: 'Today',
+            cta: 'Open matches',
+            onPress: () => router.push('/(tabs)/matches'),
+          }
+        : null,
+      {
+        id: 'plan-review',
+        title: 'Review your membership plan',
+        subtitle: 'Check credits, renewal timeline, and tier benefits.',
+        action: tier,
+        cta: 'Manage plan',
+        onPress: () => router.push('/(tabs)/subscription'),
+      },
+    ].filter((step): step is NonNullable<typeof step> => Boolean(step)),
+    [bioLength, bioVisionReady, completion, pendingIntros, router, tier, visionLength],
+  );
+
+  async function onSaveDetails() {
+    const normalizedFullName = editFullName.trim();
+    const normalizedOccupation = editOccupation.trim();
+    const normalizedCity = editCity.trim();
+    const normalizedCountry = editCountry.trim();
+    const normalizedBio = editBio.trim();
+    const normalizedVision = editVision.trim();
+    const nonNegotiables = parseNonNegotiables(editNonNegotiables);
+
+    if (normalizedFullName.length < 2) {
+      setFormSuccess(null);
+      setFormError('Full name must have at least 2 characters.');
+      return;
+    }
+
+    if ((normalizedCity && !normalizedCountry) || (!normalizedCity && normalizedCountry)) {
+      setFormSuccess(null);
+      setFormError('Please provide both city and country, or leave both blank.');
+      return;
+    }
+
+    setSaving(true);
+    setFormError(null);
+    setFormSuccess(null);
+
     try {
-      await refreshProfile();
+      const patch: Record<string, unknown> = {
+        fullName: normalizedFullName,
+        occupation: normalizedOccupation,
+        bio: normalizedBio,
+        relationshipVision: normalizedVision,
+        nonNegotiables,
+      };
+
+      if (normalizedCity && normalizedCountry) {
+        patch.location = {
+          city: normalizedCity,
+          country: normalizedCountry,
+          label: `${normalizedCity}, ${normalizedCountry}`,
+        };
+
+        patch.basic = {
+          city: normalizedCity,
+          country: normalizedCountry,
+          occupation: normalizedOccupation,
+        };
+      }
+
+      await updateProfile(patch);
+      setFormSuccess('Profile details saved successfully.');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to save profile details.');
     } finally {
-      setRefreshing(false);
+      setSaving(false);
+    }
+  }
+
+  async function onSaveBioVision() {
+    const normalizedBio = editBio.trim();
+    const normalizedVision = editVision.trim();
+
+    if (!normalizedBio && !normalizedVision) {
+      setFormSuccess(null);
+      setFormError('Add a bio or relationship vision before saving.');
+      return;
+    }
+
+    if (normalizedBio.length < BIO_VISION_MIN_LENGTH || normalizedVision.length < BIO_VISION_MIN_LENGTH) {
+      setFormSuccess(null);
+      setFormError(`Bio and relationship vision must each be at least ${BIO_VISION_MIN_LENGTH} characters.`);
+      return;
+    }
+
+    setSavingBioVision(true);
+    setFormError(null);
+    setFormSuccess(null);
+
+    try {
+      await updateProfile({
+        bio: normalizedBio,
+        relationshipVision: normalizedVision,
+      });
+      setFormSuccess('Bio and relationship vision saved successfully.');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to save bio and relationship vision.');
+    } finally {
+      setSavingBioVision(false);
     }
   }
 
   return (
-    <LinearGradient
-      colors={[theme.colors.canvasDeep, theme.colors.canvas, '#25103C', theme.colors.canvasStrong, theme.colors.canvasDeep]}
-      style={styles.flex}
-    >
-      <View style={[styles.glow, styles.glowTopRight]} />
-      <SafeAreaView style={styles.flex}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing || profileLoading}
-              onRefresh={handleRefresh}
-              tintColor={theme.colors.primary}
-              colors={[theme.colors.primary]}
-            />
-          }
-        >
-          {/* ── Profile hero ── */}
-          <LinearGradient
-            colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.04)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroCard}
-          >
-            {/* Photo + completeness ring */}
-            <View style={styles.avatarWrap}>
-              <LinearGradient
-                colors={['rgba(255,215,0,0.7)', 'rgba(125,87,201,0.7)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.avatarRing}
-              >
-                {primaryPhoto?.url ? (
-                  <Image
-                    source={{ uri: primaryPhoto.url }}
-                    style={styles.avatarImage}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="person" size={38} color={theme.colors.primary} />
-                  </View>
-                )}
-              </LinearGradient>
+    <AppScreen>
+      <FadeIn>
+        <TabScreenHeader
+          title="Profile"
+          subtitle="Show who you are, refine your intentions, and increase match quality."
+        />
+      </FadeIn>
 
-              {/* Completeness badge */}
-              <View style={[styles.completeBadge, { borderColor: completenessColor(completeness) }]}>
-                <Text style={[styles.completePct, { color: completenessColor(completeness) }]}>
-                  {completeness}%
-                </Text>
-              </View>
+      <FadeIn delay={90}>
+        <GlassCard highlighted>
+          <View style={styles.heroTop}>
+            <View style={styles.avatarBig}>
+              <Text style={styles.avatarInitial}>{fullName.slice(0, 1).toUpperCase()}</Text>
             </View>
-
-            {/* Name / location */}
-            <View style={styles.heroInfo}>
-              <View style={styles.heroNameRow}>
-                <Text style={styles.heroLocation}>
-                  {[profile?.basic?.city, profile?.basic?.country].filter(Boolean).join(', ') || 'Location not set'}
-                </Text>
-                <LinearGradient
-                  colors={tierColors(tier)}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.tierPill}
-                >
-                  <Ionicons
-                    name={tier === 'vip' ? 'diamond' : tier === 'priority' ? 'flash' : 'star-outline'}
-                    size={10}
-                    color="#1C102D"
-                  />
-                  <Text style={styles.tierPillText}>{tier.toUpperCase()}</Text>
-                </LinearGradient>
+            <View style={styles.heroMeta}>
+              <Text style={styles.name}>{age ? `${fullName}, ${age}` : fullName}</Text>
+              <Text style={styles.city}>{city}</Text>
+              <View style={styles.tierPill}>
+                <MaterialCommunityIcons name="crown" size={12} color={COLORS.goldGlow} />
+                <Text style={styles.tierText}>{tier}</Text>
               </View>
-              <Text style={styles.heroOccupation}>
-                {(profile?.basic?.occupation as string | undefined) || 'Occupation not set'}
-              </Text>
-            </View>
-
-            {/* Progress bar */}
-            <View style={styles.progressSection}>
-              <View style={styles.progressHeaderRow}>
-                <Text style={styles.progressLabel}>Profile completeness</Text>
-                <Text style={[styles.progressPct, { color: completenessColor(completeness) }]}>
-                  {completeness}%
-                </Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <LinearGradient
-                  colors={
-                    completeness >= 80
-                      ? [theme.colors.success, '#3BB89A']
-                      : completeness >= 50
-                      ? ['#FFE680', '#D9A300']
-                      : ['#FF8FA3', '#D54B68']
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.progressFill, { width: `${completeness}%` }]}
-                />
-              </View>
-            </View>
-
-            {/* Completeness checklist */}
-            <View style={styles.checkRow}>
-              <CheckItem label="Basic" done={!!profile?.completeness?.basic} />
-              <CheckItem label="Photos" done={!!profile?.completeness?.photos} />
-              <CheckItem label="Vision" done={!!profile?.completeness?.vision} />
-              <CheckItem label="Prefs" done={!!profile?.completeness?.preferences} />
-            </View>
-          </LinearGradient>
-
-          {/* ── Photo grid ── */}
-          {profile?.photos && profile.photos.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Photos ({profile.photos.length} / 3)</Text>
-              <View style={styles.photoGrid}>
-                {profile.photos
-                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                  .map((photo) => (
-                    <View key={photo.publicId} style={styles.photoSlot}>
-                      {photo.url ? (
-                        <Image
-                          source={{ uri: photo.url }}
-                          style={styles.photoImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.photoPlaceholder}>
-                          <Ionicons name="image-outline" size={24} color={theme.colors.textMuted} />
-                        </View>
-                      )}
-                      {photo.isPrimary && (
-                        <View style={styles.primaryBadge}>
-                          <Text style={styles.primaryBadgeText}>Primary</Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-              </View>
-            </View>
-          )}
-
-          {/* ── Section tabs ── */}
-          <View style={styles.section}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
-              {(Object.keys(SECTION_LABELS) as SectionKey[]).map((key) => {
-                const { label, icon } = SECTION_LABELS[key];
-                const isActive = activeSection === key;
-                return (
-                  <Pressable
-                    key={key}
-                    style={[styles.tab, isActive && styles.tabActive]}
-                    onPress={() => setActiveSection(key)}
-                  >
-                    {isActive ? (
-                      <LinearGradient
-                        colors={['rgba(255,215,0,0.20)', 'rgba(255,215,0,0.08)']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.tabGrad}
-                      >
-                        <Ionicons name={icon} size={14} color={theme.colors.primary} />
-                        <Text style={styles.tabTextActive}>{label}</Text>
-                      </LinearGradient>
-                    ) : (
-                      <View style={styles.tabInactive}>
-                        <Ionicons name={icon} size={14} color={theme.colors.textMuted} />
-                        <Text style={styles.tabText}>{label}</Text>
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* Section content */}
-            <View style={styles.sectionContent}>
-              <SectionContent profile={profile} section={activeSection} />
             </View>
           </View>
 
-          {/* ── Status card ── */}
-          <LinearGradient
-            colors={
-              profile?.isSubmitted
-                ? ['rgba(110,219,176,0.15)', 'rgba(110,219,176,0.06)']
-                : ['rgba(255,215,0,0.12)', 'rgba(255,215,0,0.04)']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.statusCard}
-          >
-            <Ionicons
-              name={profile?.isSubmitted ? 'checkmark-circle' : 'time-outline'}
-              size={20}
-              color={profile?.isSubmitted ? theme.colors.success : theme.colors.primary}
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.statusTitle}>
-                {profile?.isSubmitted ? 'Profile submitted' : 'Not yet submitted'}
-              </Text>
-              <Text style={styles.statusBody}>
-                {profile?.isSubmitted
-                  ? 'Your profile is live and matches are being curated.'
-                  : 'Complete all sections to activate precision matching.'}
-              </Text>
+          <View style={styles.heroStats}>
+            <Stat label="Profile" value={`${completion}%`} />
+            <Stat label="Accepted" value={`${acceptedIntros}`} />
+            <Stat label="Credits" value={`${profile?.credits ?? user?.credits ?? 0}`} />
+          </View>
+
+          <View style={styles.heroActions}>
+            <GoldButton label={loading ? 'Refreshing...' : 'Refresh profile'} onPress={refreshAll} style={styles.heroActionButton} />
+            <GoldButton label="Edit settings" outlined onPress={() => router.push('/(tabs)/settings')} style={styles.heroActionButton} />
+          </View>
+
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color={COLORS.goldGlow} />
+              <Text style={styles.loadingText}>Loading profile...</Text>
             </View>
-          </LinearGradient>
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        </GlassCard>
+      </FadeIn>
+
+      <FadeIn delay={150}>
+        <GlassCard highlighted>
+          <Text style={styles.sectionTitle}>Complete profile details</Text>
+          <Text style={styles.emptyNote}>Keep your profile current so matching quality keeps improving.</Text>
+
+          <Text style={styles.inputLabel}>Full name</Text>
+          <TextInput
+            value={editFullName}
+            onChangeText={setEditFullName}
+            placeholder="Your full name"
+            placeholderTextColor="rgba(196,168,130,0.75)"
+            style={styles.input}
+            editable={!formBusy}
+          />
+
+          <Text style={styles.inputLabel}>Occupation</Text>
+          <TextInput
+            value={editOccupation}
+            onChangeText={setEditOccupation}
+            placeholder="Occupation"
+            placeholderTextColor="rgba(196,168,130,0.75)"
+            style={styles.input}
+            editable={!formBusy}
+          />
+
+          <View style={styles.locationRow}>
+            <View style={styles.locationCol}>
+              <Text style={styles.inputLabel}>City</Text>
+              <TextInput
+                value={editCity}
+                onChangeText={setEditCity}
+                placeholder="Nairobi"
+                placeholderTextColor="rgba(196,168,130,0.75)"
+                style={styles.input}
+                editable={!formBusy}
+              />
+            </View>
+            <View style={styles.locationCol}>
+              <Text style={styles.inputLabel}>Country</Text>
+              <TextInput
+                value={editCountry}
+                onChangeText={setEditCountry}
+                placeholder="Kenya"
+                placeholderTextColor="rgba(196,168,130,0.75)"
+                style={styles.input}
+                editable={!formBusy}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.inputLabel}>About you</Text>
+          <TextInput
+            value={editBio}
+            onChangeText={setEditBio}
+            placeholder="Tell us about yourself"
+            placeholderTextColor="rgba(196,168,130,0.75)"
+            style={[styles.input, styles.inputMultiline]}
+            editable={!formBusy}
+            multiline
+          />
+          <Text style={styles.inputHint}>{`${editBio.trim().length} characters`}</Text>
+
+          <Text style={styles.inputLabel}>Relationship vision</Text>
+          <TextInput
+            value={editVision}
+            onChangeText={setEditVision}
+            placeholder="What kind of relationship are you building?"
+            placeholderTextColor="rgba(196,168,130,0.75)"
+            style={[styles.input, styles.inputMultiline]}
+            editable={!formBusy}
+            multiline
+          />
+          <Text style={styles.inputHint}>{`${editVision.trim().length} characters`}</Text>
+          <Text style={styles.inputHintStrong}>{`Minimum ${BIO_VISION_MIN_LENGTH} characters each to unlock profile completion`}</Text>
+
+          <View style={styles.formActionRow}>
+            <GoldButton
+              label={savingBioVision ? 'Saving bio & vision...' : 'Save bio & vision'}
+              outlined
+              onPress={() => void onSaveBioVision()}
+            />
+          </View>
+
+          <Text style={styles.inputLabel}>Non-negotiables (one per line)</Text>
+          <TextInput
+            value={editNonNegotiables}
+            onChangeText={setEditNonNegotiables}
+            placeholder={'Faith\nKindness\nConsistency'}
+            placeholderTextColor="rgba(196,168,130,0.75)"
+            style={[styles.input, styles.inputMultiline]}
+            editable={!formBusy}
+            multiline
+          />
+
+          {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+          {formSuccess ? <Text style={styles.successText}>{formSuccess}</Text> : null}
+
+          <View style={styles.formActionRow}>
+            <GoldButton label={saving ? 'Saving...' : 'Save profile details'} onPress={() => void onSaveDetails()} />
+          </View>
+        </GlassCard>
+      </FadeIn>
+
+      <FadeIn delay={230}>
+        <GlassCard>
+          <Text style={styles.sectionTitle}>About</Text>
+          <Text style={styles.body}>{bio}</Text>
+          {profile?.occupation ? <Text style={styles.metaText}>{`Occupation: ${profile.occupation}`}</Text> : null}
+          {profile?.religion ? <Text style={styles.metaText}>{`Faith: ${profile.religion}`}</Text> : null}
+        </GlassCard>
+      </FadeIn>
+
+      <FadeIn delay={310}>
+        <GlassCard>
+          <Text style={styles.sectionTitle}>Core values</Text>
+          {values.length > 0 ? (
+            <View style={styles.tagsRow}>
+              {values.map((value) => (
+                <Tag key={value} label={value} />
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.emptyNote}>Add non-negotiables in your profile to sharpen curation quality.</Text>
+          )}
+        </GlassCard>
+      </FadeIn>
+
+      <FadeIn delay={380}>
+        <GlassCard>
+          <Text style={styles.sectionTitle}>Preferences</Text>
+          {preferences.length > 0 ? (
+            <View style={styles.prefList}>
+              {preferences.map((item) => (
+                <View key={item} style={styles.prefItem}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={16} color={COLORS.goldChampagne} />
+                  <Text style={styles.prefText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.emptyNote}>No preference data yet. Complete onboarding preferences to improve matching.</Text>
+          )}
+        </GlassCard>
+      </FadeIn>
+
+      <FadeIn delay={450}>
+        <GlassCard highlighted>
+          <Text style={styles.sectionTitle}>Next steps</Text>
+          <Text style={styles.emptyNote}>Keep momentum by completing your next high-impact actions.</Text>
+
+          <View style={styles.nextStepsWrap}>
+            {nextSteps.map((step) => (
+              <View key={step.id} style={styles.nextStepCard}>
+                <View style={styles.nextStepHead}>
+                  <Text style={styles.nextStepTitle}>{step.title}</Text>
+                  <Text style={styles.nextStepAction}>{step.action}</Text>
+                </View>
+                <Text style={styles.nextStepSubtitle}>{step.subtitle}</Text>
+                <Pressable onPress={step.onPress} style={({ pressed }) => [styles.nextStepButton, pressed && styles.nextStepButtonPressed]}>
+                  <Text style={styles.nextStepButtonText}>{step.cta}</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.goldChampagne} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        </GlassCard>
+      </FadeIn>
+    </AppScreen>
   );
 }
 
-function CheckItem({ label, done }: { label: string; done: boolean }) {
+type StatProps = {
+  label: string;
+  value: string;
+};
+
+function Stat({ label, value }: StatProps) {
   return (
-    <View style={styles.checkItem}>
-      <Ionicons
-        name={done ? 'checkmark-circle' : 'ellipse-outline'}
-        size={14}
-        color={done ? theme.colors.success : theme.colors.textMuted}
-      />
-      <Text style={[styles.checkLabel, { color: done ? theme.colors.success : theme.colors.textMuted }]}>
-        {label}
-      </Text>
+    <View style={styles.statItem}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue}>{value}</Text>
     </View>
   );
 }
 
-function SectionContent({
-  profile,
-  section,
-}: {
-  profile: ProfileMe | null | undefined;
-  section: SectionKey;
-}) {
-  if (!profile) {
-    return <Text style={styles.emptyText}>No data available.</Text>;
-  }
+type TagProps = {
+  label: string;
+};
 
-  if (section === 'identity') {
-    return (
-      <View style={styles.dataRows}>
-        <DataRow label="Gender" value={humanize(String(profile.basic?.gender ?? ''))} />
-        <DataRow label="Country" value={String(profile.basic?.country ?? 'Not set')} />
-        <DataRow label="City" value={String(profile.basic?.city ?? 'Not set')} />
-        <DataRow label="Religion" value={humanize(String(profile.basic?.religion ?? ''))} />
-        <DataRow label="Marital Status" value={humanize(String(profile.basic?.maritalStatus ?? ''))} />
-        <DataRow label="Occupation" value={String(profile.basic?.occupation ?? 'Not set')} />
-      </View>
-    );
-  }
-
-  if (section === 'lifestyle') {
-    const bg = profile.background as Record<string, unknown> | undefined;
-    return (
-      <View style={styles.dataRows}>
-        <DataRow label="Smoking" value={humanize(String(bg?.smokingHabit ?? ''))} />
-        <DataRow label="Drinking" value={humanize(String(bg?.drinkingHabit ?? ''))} />
-        <DataRow label="Diet" value={humanize(String(bg?.dietType ?? ''))} />
-        <DataRow label="Exercise" value={humanize(String(bg?.exerciseFrequency ?? ''))} />
-        <DataRow label="Children" value={humanize(String(bg?.childrenStatus ?? ''))} />
-        <DataRow label="Wants children" value={humanize(String(bg?.wantsChildren ?? ''))} />
-        {Array.isArray(bg?.personalityTraits) && (bg.personalityTraits as string[]).length > 0 && (
-          <DataRow
-            label="Personality"
-            value={(bg.personalityTraits as string[]).map(humanize).join(', ')}
-          />
-        )}
-      </View>
-    );
-  }
-
-  if (section === 'vision') {
-    const v = profile.vision as Record<string, unknown> | undefined;
-    return (
-      <View style={styles.dataRows}>
-        <DataRow
-          label="Seeking"
-          value={
-            Array.isArray(v?.relationshipType)
-              ? (v.relationshipType as string[]).map(humanize).join(', ')
-              : humanize(String(v?.relationshipType ?? ''))
-          }
-        />
-        <DataRow
-          label="Core values"
-          value={
-            Array.isArray(v?.coreValues)
-              ? (v.coreValues as string[]).map(humanize).join(', ')
-              : 'Not set'
-          }
-        />
-        {v?.idealPartnerDescription ? (
-          <View style={styles.textBlock}>
-            <Text style={styles.textBlockLabel}>Ideal partner</Text>
-            <Text style={styles.textBlockBody}>{String(v.idealPartnerDescription)}</Text>
-          </View>
-        ) : null}
-        {v?.lifeVision ? (
-          <View style={styles.textBlock}>
-            <Text style={styles.textBlockLabel}>Life vision</Text>
-            <Text style={styles.textBlockBody}>{String(v.lifeVision)}</Text>
-          </View>
-        ) : null}
-      </View>
-    );
-  }
-
-  if (section === 'preferences') {
-    const p = profile.preferences as Record<string, unknown> | undefined;
-    return (
-      <View style={styles.dataRows}>
-        {p?.ageRange && typeof p.ageRange === 'object' ? (
-          <DataRow
-            label="Age range"
-            value={`${(p.ageRange as { min: number; max: number }).min} – ${(p.ageRange as { min: number; max: number }).max} yrs`}
-          />
-        ) : null}
-        <DataRow
-          label="Countries"
-          value={Array.isArray(p?.countries) ? (p.countries as string[]).join(', ') : 'Any'}
-        />
-        <DataRow label="Religion" value={humanize(String(p?.religion ?? 'Any'))} />
-        <DataRow
-          label="International"
-          value={(p as any)?.internationalSearch ? 'Open to international matches' : 'Local only'}
-        />
-      </View>
-    );
-  }
-
-  return null;
-}
-
-function DataRow({ label, value }: { label: string; value: string }) {
-  if (!value || value === 'undefined' || value === '') return null;
+function Tag({ label }: TagProps) {
   return (
-    <View style={styles.dataRow}>
-      <Text style={styles.dataLabel}>{label}</Text>
-      <Text style={styles.dataValue}>{value || '—'}</Text>
+    <View style={styles.tag}>
+      <Text style={styles.tagText}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  glow: {
-    position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 280,
-    backgroundColor: 'rgba(227,193,111,0.12)',
-  },
-  glowTopRight: { top: -120, right: -130 },
-
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 40, gap: 16 },
-
-  heroCard: {
-    borderRadius: 22,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.20)',
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 14,
+    marginBottom: 14,
   },
-  avatarWrap: { alignSelf: 'center', position: 'relative', marginTop: 4 },
-  avatarRing: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    padding: 3,
+  avatarBig: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(212,175,55,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarImage: { width: 90, height: 90, borderRadius: 45 },
-  avatarPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: theme.colors.canvasStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
+  avatarInitial: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.displayBold,
+    fontSize: 30,
   },
-  completeBadge: {
-    position: 'absolute',
-    bottom: -4,
-    right: -4,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: theme.colors.canvasStrong,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completePct: { fontFamily: theme.font.sansBold, fontSize: 10 },
-
-  heroInfo: { alignItems: 'center', gap: 4 },
-  heroNameRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  heroLocation: { fontFamily: theme.font.sansBold, color: theme.colors.text, fontSize: 15 },
-  tierPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  tierPillText: { fontFamily: theme.font.sansBold, fontSize: 9, color: '#1C102D' },
-  heroOccupation: { fontFamily: theme.font.sans, color: theme.colors.textMuted, fontSize: 13 },
-
-  progressSection: { gap: 6 },
-  progressHeaderRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  progressLabel: { fontFamily: theme.font.sans, color: theme.colors.textMuted, fontSize: 12 },
-  progressPct: { fontFamily: theme.font.sansBold, fontSize: 12 },
-  progressTrack: {
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', borderRadius: 3 },
-
-  checkRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  checkItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  checkLabel: { fontFamily: theme.font.sans, fontSize: 11 },
-
-  section: { gap: 12 },
-  sectionTitle: {
-    fontFamily: theme.font.sansBold,
-    color: theme.colors.text,
-    fontSize: 15,
-    letterSpacing: 0.3,
-  },
-
-  photoGrid: { flexDirection: 'row', gap: 10 },
-  photoSlot: {
+  heroMeta: {
     flex: 1,
-    aspectRatio: 0.8,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  name: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.displayBold,
+    fontSize: 28,
+    lineHeight: 31,
+  },
+  city: {
+    marginTop: -1,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 13,
+  },
+  tierPill: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.20)',
-    position: 'relative',
-  },
-  photoImage: { width: '100%', height: '100%' },
-  photoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  primaryBadge: {
-    position: 'absolute',
-    bottom: 6,
-    left: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,215,0,0.85)',
-  },
-  primaryBadgeText: { fontFamily: theme.font.sansBold, fontSize: 9, color: '#1C102D' },
-
-  tabsRow: { gap: 8, flexDirection: 'row' },
-  tab: { borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
-  tabActive: { borderColor: 'rgba(255,215,0,0.35)' },
-  tabGrad: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8 },
-  tabInactive: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8 },
-  tabText: { fontFamily: theme.font.sans, color: theme.colors.textMuted, fontSize: 12 },
-  tabTextActive: { fontFamily: theme.font.sansBold, color: theme.colors.primary, fontSize: 12 },
-
-  sectionContent: {
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-
-  dataRows: { gap: 12 },
-  dataRow: {
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(212,175,55,0.14)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    gap: 5,
   },
-  dataLabel: { fontFamily: theme.font.sans, color: theme.colors.textMuted, fontSize: 13, flex: 1 },
-  dataValue: { fontFamily: theme.font.sans, color: theme.colors.text, fontSize: 13, flex: 1.5, textAlign: 'right' },
-
-  textBlock: { gap: 4 },
-  textBlockLabel: {
-    fontFamily: theme.font.sansBold,
-    color: theme.colors.textMuted,
+  tierText: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodyMedium,
     fontSize: 11,
-    textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  textBlockBody: {
-    fontFamily: theme.font.sans,
-    color: theme.colors.text,
-    fontSize: 13,
-    lineHeight: 19,
-    fontStyle: 'italic',
+  heroStats: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
   },
-
-  emptyText: { fontFamily: theme.font.sans, color: theme.colors.textMuted, fontSize: 13 },
-
-  statusCard: {
+  heroActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  heroActionButton: {
+    flex: 1,
+  },
+  statItem: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  statLabel: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  statValue: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.bodySemiBold,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  loadingRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  errorText: {
+    marginTop: 8,
+    color: COLORS.danger,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  successText: {
+    marginTop: 8,
+    color: COLORS.success,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  sectionTitle: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.display,
+    fontSize: 24,
+    marginBottom: 6,
+  },
+  inputLabel: {
+    marginTop: 10,
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  input: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    color: COLORS.offWhite,
+    fontFamily: FONT.body,
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  inputMultiline: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+  },
+  inputHint: {
+    marginTop: 4,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 11,
+  },
+  inputHintStrong: {
+    marginTop: 2,
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 11,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  locationCol: {
+    flex: 1,
+  },
+  formActionRow: {
+    marginTop: 12,
+  },
+  body: {
+    color: COLORS.textBody,
+    fontFamily: FONT.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  metaText: {
+    marginTop: 6,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 13,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  tag: {
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  tagText: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 12,
+  },
+  prefList: {
+    gap: 9,
+    marginTop: 2,
+  },
+  prefItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  prefText: {
+    color: COLORS.textBody,
+    fontFamily: FONT.body,
+    fontSize: 14,
+    flex: 1,
+  },
+  emptyNote: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  nextStepsWrap: {
+    marginTop: 12,
+    gap: 10,
+  },
+  nextStepCard: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    padding: 12,
+  },
+  nextStepHead: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    justifyContent: 'space-between',
+    gap: 10,
   },
-  statusTitle: { fontFamily: theme.font.sansBold, color: theme.colors.text, fontSize: 13 },
-  statusBody: { fontFamily: theme.font.sans, color: theme.colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  nextStepTitle: {
+    flex: 1,
+    color: COLORS.offWhite,
+    fontFamily: FONT.bodySemiBold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  nextStepAction: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  nextStepSubtitle: {
+    marginTop: 4,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  nextStepButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(212,175,55,0.08)',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  nextStepButtonPressed: {
+    opacity: 0.86,
+  },
+  nextStepButtonText: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.bodySemiBold,
+    fontSize: 12,
+  },
 });

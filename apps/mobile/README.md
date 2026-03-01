@@ -1,29 +1,14 @@
-# Kujuana Mobile
+# Kujuana Mobile (Native + Live API)
 
-Production Expo mobile client that mirrors the Kujuana web experience:
+This mobile app is a native Expo app with real backend integration.
 
-- Same luxury purple/gold palette
-- Same typography direction (`Cormorant Garamond` display + `Jost` body)
-- Same core flow: auth, onboarding, plan selection, payment gate, profile, matchmaking
-- Admin console support for `admin`, `manager`, and `matchmaker` roles
+## What is live
 
-## Scope
-
-- Auth: register, login, email verification, secure session persistence
-- Onboarding: full 7-step flow with paid-plan payment enforcement before submission
-- Matches: list + detail + accept/decline + priority request
-- Billing: Paystack/Pesapal/Flutterwave initiation + status polling
-- Profile + settings: completeness snapshot, subscription controls, sign-out
-- Admin mobile views: dashboard, queue, members, audit
-
-## Stack
-
-- Expo SDK 54
-- React Native 0.81
-- Expo Router
-- Zustand + expo-secure-store
-- TanStack Query
-- Zod + shared schemas from `@kujuana/shared`
+- Auth session via `/auth/login` and `/auth/me`
+- Profile via `/profile/me`
+- Matches via `/matches` (+ respond actions)
+- Subscription via `/subscriptions/me`
+- Settings persistence via `/profile/me` patch (`settings` object)
 
 ## Environment
 
@@ -31,82 +16,21 @@ Create `apps/mobile/.env`:
 
 ```bash
 EXPO_PUBLIC_API_URL=http://localhost:4000/api/v1
-EXPO_PUBLIC_PUSH_PROJECT_ID=replace-with-project-id
+EXPO_PUBLIC_WEB_URL=http://localhost:3000
 ```
 
-## Commands
+For physical devices, point to a reachable LAN IP (not localhost):
 
-From repo root:
+```bash
+EXPO_PUBLIC_API_URL=http://192.168.x.x:4000/api/v1
+EXPO_PUBLIC_WEB_URL=http://192.168.x.x:3000
+```
+
+## Run
 
 ```bash
 pnpm --filter mobile start
-pnpm --filter mobile android
-pnpm --filter mobile ios
-pnpm --filter mobile typecheck
-pnpm --filter mobile lint
 ```
 
-## View The App Immediately
-
-If LAN mode does not show on your phone, use tunnel mode:
-
-```bash
-EXPO_USE_LOCAL_NGROK=1 pnpm --filter mobile start -- --tunnel
-```
-
-Then open the `exp://...exp.direct` URL shown in terminal in Expo Go.
-
-### Required UI dependencies
-
-```bash
-npx expo install expo-linear-gradient @expo/vector-icons expo-image-picker
-```
-
-## Build Downloadable APK
-
-1. Install EAS CLI and login:
-
-```bash
-pnpm dlx eas-cli --version
-pnpm dlx eas-cli login
-```
-
-2. Set real project id in `apps/mobile/app.json`:
-
-- `expo.extra.eas.projectId`
-
-3. Build APK (internal/preview):
-
-```bash
-cd apps/mobile
-pnpm dlx eas-cli build --platform android --profile preview
-```
-
-4. Download artifact:
-
-- Open the build URL printed by EAS
-- Download the generated `.apk`
-
-### Production AAB (Play Store)
-
-```bash
-cd apps/mobile
-pnpm dlx eas-cli build --platform android --profile production
-```
-
-This generates `.aab` for Play Store submission.
-
-## Release Checklist
-
-1. Update identifiers in `apps/mobile/app.json`:
-- `ios.bundleIdentifier`
-- `android.package`
-- `expo.extra.eas.projectId`
-
-2. Replace brand assets:
-- `assets/icon.png`
-- `assets/adaptive-icon.png`
-- `assets/splash-icon.png`
-- `assets/favicon.png`
-
-3. Confirm production API URL in mobile env.
+Open the app in Expo Go and sign in with an existing Kujuana account.
+If you do not have an account yet, use the in-app `Create account` flow on the login screen.

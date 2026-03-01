@@ -1,435 +1,615 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
-  Image,
+  ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { ApiError } from '@/lib/api/types';
-import { registerUser } from '@/lib/api/endpoints';
+import { Redirect, useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppScreen } from '@/components/ui/AppScreen';
+import { FadeIn } from '@/components/ui/FadeIn';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { GoldButton } from '@/components/ui/GoldButton';
+import { KujuanaLogo } from '@/components/ui/KujuanaLogo';
+import { API_CONFIG } from '@/lib/api/config';
+import { ApiError, apiClient } from '@/lib/api/client';
+import { useSession } from '@/lib/state/session';
+import { COLORS, FONT, RADIUS } from '@/lib/theme/tokens';
+
+function normalizePhone(value: string): string {
+  const compact = value.replace(/[\s()-]/g, '');
+  if (compact.startsWith('+')) return compact;
+  if (compact.startsWith('00')) return `+${compact.slice(2)}`;
+  if (compact.startsWith('0') && compact.length === 10) return `+254${compact.slice(1)}`;
+  if (/^254\d{9}$/.test(compact)) return `+${compact}`;
+  if (/^7\d{8}$/.test(compact)) return `+254${compact}`;
+  return compact;
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isStrongPassword(value: string): boolean {
+  return value.length >= 8 && /[A-Z]/.test(value) && /[0-9]/.test(value);
+}
+
+function isValidE164(value: string): boolean {
+  return /^\+[1-9]\d{7,14}$/.test(value);
+}
 
 export default function RegisterScreen() {
+  const router = useRouter();
+  const { status, signIn } = useSession();
+
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [focusedField, setFocusedField] = useState<'fullName' | 'email' | 'phone' | 'password' | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  async function submit() {
-    setError('');
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedPhone = normalizePhone(phone);
 
-    if (!agreedToTerms) {
-      setError('Please accept the Terms and Privacy Policy to continue.');
+  if (status === 'signed_in') {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  async function onSubmit() {
+    if (!fullName.trim() || !normalizedEmail || !normalizedPhone || !password.trim()) {
+      setError('All fields are required.');
       return;
     }
 
-    setLoading(true);
+    if (fullName.trim().length < 2) {
+      setError('Full name must have at least 2 characters.');
+      return;
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+
+    if (!isValidE164(normalizedPhone)) {
+      setError('Phone must be in E.164 format, for example +254712345678.');
+      return;
+    }
+
+    if (!isStrongPassword(password)) {
+      setError('Password must be at least 8 characters and include 1 uppercase letter and 1 number.');
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError('You must agree to terms to create an account.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
 
     try {
-      await registerUser({
+      const result = await apiClient.register({
         fullName: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
+        email: normalizedEmail,
+        phone: normalizedPhone,
         password,
-        agreedToTerms: true,
+        agreedToTerms,
       });
 
-      router.push({ pathname: '/(auth)/verify-email', params: { email } });
+      setSuccess(result.message);
+
+      try {
+        await signIn(normalizedEmail, password);
+        router.replace('/(tabs)');
+      } catch (signInError) {
+        const message = signInError instanceof Error ? signInError.message : 'Account created. Please sign in.';
+        if (message.toLowerCase().includes('verify')) {
+          setSuccess(result.message || 'Account created. Verify your email, then sign in.');
+          router.replace('/(auth)/login');
+          return;
+        }
+        throw signInError;
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('Unable to register right now.');
+        setError('Unable to create account right now.');
       }
     } finally {
-      setLoading(false);
+      setSubmitting(false);
+    }
+  }
+
+  const showNetworkHint =
+    error?.toLowerCase().includes('network') ||
+    error?.toLowerCase().includes('timed out') ||
+    error?.toLowerCase().includes('failed to fetch');
+
+  async function openSupport(path: '/help' | '/contact') {
+    const url = `${API_CONFIG.webUrl}${path}`;
+    try {
+      await Linking.openURL(url);
+      setError(null);
+    } catch {
+      setError(`Unable to open ${path === '/help' ? 'Help Centre' : 'Contact Us'}. Visit: ${url}`);
     }
   }
 
   return (
-    <LinearGradient
-      colors={['#140321', '#2A0B46', '#4B165E', '#2A0B46', '#140321']}
-      start={{ x: 0.15, y: 0.1 }}
-      end={{ x: 0.85, y: 0.95 }}
-      style={styles.bg}
-    >
-      <View style={[styles.glow, styles.glowTopRight]} />
-      <View style={[styles.glow, styles.glowBottomRight]} />
-      <View style={[styles.glow, styles.glowBottomLeft]} />
-
+    <AppScreen contentContainerStyle={styles.screenContent}>
       <KeyboardAvoidingView
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.container} bounces={false}>
-          <View style={styles.phoneFrame}>
-            <View style={styles.phoneNotch} />
-
-            <View style={styles.logoWrap}>
-              <View style={styles.logoStage}>
-                <View style={styles.logoHalo} />
-                <Image source={require('../../assets/kujuana_logo.png')} style={styles.logoImage} resizeMode="contain" />
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          <FadeIn>
+            <View style={styles.heroSection}>
+              <View style={styles.brandCard}>
+                <KujuanaLogo size={76} showWordmark={false} style={styles.brandLogo} />
+                <Text style={styles.brandName}>Kujuana</Text>
+                <Text style={styles.brandCaption}>Dating With Intention</Text>
               </View>
-              <Text style={styles.brand}>KUJUANA</Text>
-              <Text style={styles.tagline}>Dating with intention.</Text>
+
+              <View style={styles.trustRow}>
+                <View style={styles.trustPill}>
+                  <MaterialCommunityIcons name="crown-outline" size={14} color={COLORS.goldGlow} />
+                  <Text style={styles.trustText}>Curated</Text>
+                </View>
+                <View style={styles.trustPill}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={14} color={COLORS.goldGlow} />
+                  <Text style={styles.trustText}>Secure</Text>
+                </View>
+                <View style={styles.trustPill}>
+                  <MaterialCommunityIcons name="heart-outline" size={14} color={COLORS.goldGlow} />
+                  <Text style={styles.trustText}>Meaningful</Text>
+                </View>
+              </View>
             </View>
 
-            <Text style={styles.title}>Create your account</Text>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Text style={styles.registerTitle}>Create account</Text>
+          </FadeIn>
 
-            <View style={styles.cardOuter}>
-              <LinearGradient
-                colors={['rgba(255,255,255,0.12)', 'rgba(255,255,255,0.06)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.card}
-              >
-                <GoldInput
-                  icon="person-outline"
-                  placeholder="Full name"
+          <FadeIn delay={120}>
+            <GlassCard highlighted style={styles.formCard}>
+              <Text style={styles.label}>Full name</Text>
+              <View style={styles.inputRow}>
+                <MaterialCommunityIcons
+                  name="account-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  autoFocus
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  autoComplete="name"
+                  textContentType="name"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  editable={!submitting}
+                  placeholder="Your full name"
+                  placeholderTextColor="rgba(196,168,130,0.75)"
                   value={fullName}
                   onChangeText={setFullName}
-                  autoCapitalize="words"
+                  onFocus={() => setFocusedField('fullName')}
+                  onBlur={() => setFocusedField((current) => (current === 'fullName' ? null : current))}
+                  onSubmitEditing={() => emailRef.current?.focus()}
+                  style={[
+                    styles.input,
+                    styles.inputWithIcon,
+                    focusedField === 'fullName' && styles.inputFocused,
+                    submitting && styles.inputDisabled,
+                  ]}
                 />
-                <GoldInput
-                  icon="mail-outline"
-                  placeholder="Email"
+              </View>
+
+              <Text style={[styles.label, styles.labelSpacing]}>Email</Text>
+              <View style={styles.inputRow}>
+                <MaterialCommunityIcons
+                  name="email-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  ref={emailRef}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  editable={!submitting}
+                  placeholder="you@example.com"
+                  placeholderTextColor="rgba(196,168,130,0.75)"
                   value={email}
                   onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField((current) => (current === 'email' ? null : current))}
+                  onSubmitEditing={() => phoneRef.current?.focus()}
+                  style={[
+                    styles.input,
+                    styles.inputWithIcon,
+                    focusedField === 'email' && styles.inputFocused,
+                    submitting && styles.inputDisabled,
+                  ]}
                 />
-                <GoldInput
-                  icon="call-outline"
-                  placeholder="Phone number"
+              </View>
+
+              <Text style={[styles.label, styles.labelSpacing]}>Phone</Text>
+              <View style={styles.inputRow}>
+                <MaterialCommunityIcons
+                  name="phone-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  ref={phoneRef}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="phone-pad"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  editable={!submitting}
+                  placeholder="+254712345678"
+                  placeholderTextColor="rgba(196,168,130,0.75)"
                   value={phone}
                   onChangeText={setPhone}
-                  keyboardType="phone-pad"
+                  onFocus={() => setFocusedField('phone')}
+                  onBlur={() => setFocusedField((current) => (current === 'phone' ? null : current))}
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  style={[
+                    styles.input,
+                    styles.inputWithIcon,
+                    focusedField === 'phone' && styles.inputFocused,
+                    submitting && styles.inputDisabled,
+                  ]}
                 />
+              </View>
 
-                <View style={{ marginTop: 14 }}>
-                  <View style={styles.inputOuter}>
-                    <LinearGradient
-                      colors={['rgba(255, 215, 0, 0.95)', 'rgba(255, 215, 0, 0.35)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.inputBorder}
-                    >
-                      <View style={styles.inputInner}>
-                        <Ionicons
-                          name="lock-closed-outline"
-                          size={18}
-                          color="rgba(255,255,255,0.85)"
-                          style={{ marginRight: 10 }}
-                        />
-                        <TextInput
-                          placeholder="Password"
-                          placeholderTextColor="rgba(255,255,255,0.60)"
-                          value={password}
-                          onChangeText={setPassword}
-                          secureTextEntry={!showPass}
-                          style={styles.input}
-                          autoCapitalize="none"
-                        />
-                        <Pressable onPress={() => setShowPass((s) => !s)} hitSlop={10}>
-                          <Ionicons
-                            name={showPass ? 'eye-outline' : 'eye-off-outline'}
-                            size={18}
-                            color="rgba(255,255,255,0.70)"
-                          />
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  </View>
-                </View>
-
+              <Text style={[styles.label, styles.labelSpacing]}>Password</Text>
+              <View style={styles.passwordWrap}>
+                <MaterialCommunityIcons
+                  name="lock-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  ref={passwordRef}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="password-new"
+                  textContentType="newPassword"
+                  secureTextEntry={!showPassword}
+                  returnKeyType="done"
+                  editable={!submitting}
+                  placeholder="At least 8 chars, 1 uppercase, 1 number"
+                  placeholderTextColor="rgba(196,168,130,0.75)"
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField((current) => (current === 'password' ? null : current))}
+                  onSubmitEditing={onSubmit}
+                  style={[
+                    styles.input,
+                    styles.passwordInput,
+                    focusedField === 'password' && styles.inputFocused,
+                    submitting && styles.inputDisabled,
+                  ]}
+                />
                 <Pressable
-                  style={styles.termsRow}
-                  onPress={() => setAgreedToTerms((prev) => !prev)}
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  style={styles.eyeButton}
+                  hitSlop={8}
                 >
-                  <View style={[styles.termsCheckbox, agreedToTerms && styles.termsCheckboxChecked]}>
-                    {agreedToTerms ? (
-                      <Ionicons name="checkmark" size={13} color="#0f0618" />
-                    ) : null}
-                  </View>
-                  <Text style={styles.termsText}>
-                    I agree to Kujuana&apos;s Terms of Service and Privacy Policy.
-                  </Text>
+                  <MaterialCommunityIcons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={18}
+                    color={COLORS.textMuted}
+                  />
                 </Pressable>
+              </View>
 
-                <Pressable style={styles.btnWrap} onPress={submit} disabled={loading}>
-                  <LinearGradient
-                    colors={['#FFE680', '#FFD700', '#D9A300']}
-                    start={{ x: 0.1, y: 0.2 }}
-                    end={{ x: 0.9, y: 0.8 }}
-                    style={[styles.btn, loading && styles.btnDisabled]}
-                  >
-                    <Text style={styles.btnText}>{loading ? 'Creating...' : 'Create Account'}</Text>
-                  </LinearGradient>
+              <View style={styles.termsRow}>
+                <Switch
+                  value={agreedToTerms}
+                  onValueChange={setAgreedToTerms}
+                  disabled={submitting}
+                  trackColor={{ false: 'rgba(255,255,255,0.16)', true: 'rgba(212,175,55,0.45)' }}
+                  thumbColor={agreedToTerms ? COLORS.goldGlow : 'rgba(255,255,255,0.75)'}
+                />
+                <Text style={styles.termsText}>I agree to Kujuana Terms and Privacy Policy</Text>
+              </View>
+
+              <View style={styles.helpRow}>
+                <Pressable onPress={() => void openSupport('/help')}>
+                  <Text style={styles.helpLinkText}>Need help creating your account?</Text>
                 </Pressable>
+              </View>
 
-                <View style={styles.loginRow}>
-                  <Text style={styles.loginText}>Already have an account? </Text>
-                  <Pressable onPress={() => router.replace('/(auth)/login')}>
-                    <Text style={styles.loginLink}>Log In</Text>
-                  </Pressable>
+              <View style={styles.statusBlock}>
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                {!error && success ? <Text style={styles.successText}>{success}</Text> : null}
+              </View>
+
+              {showNetworkHint ? (
+                <Text style={styles.hintText}>{`Check API reachability: ${API_CONFIG.baseUrl}`}</Text>
+              ) : null}
+
+              {submitting ? (
+                <View style={styles.loadingButton}>
+                  <ActivityIndicator size="small" color={COLORS.goldGlow} />
+                  <Text style={styles.loadingText}>Creating account...</Text>
                 </View>
-              </LinearGradient>
-            </View>
+              ) : (
+                <GoldButton label="Create account" onPress={onSubmit} />
+              )}
 
-            <Text style={styles.footer}>Private. Verified. Secure.</Text>
-          </View>
+              <View style={styles.linksRow}>
+                <Pressable onPress={() => router.push('/(auth)/login')}>
+                  <Text style={styles.linkText}>Already have an account? Sign in</Text>
+                </Pressable>
+                <Pressable onPress={() => void openSupport('/contact')}>
+                  <Text style={styles.linkText}>Connection help</Text>
+                </Pressable>
+              </View>
+            </GlassCard>
+          </FadeIn>
         </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
-  );
-}
-
-function GoldInput(props: {
-  icon: keyof typeof Ionicons.glyphMap;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  keyboardType?: 'default' | 'email-address' | 'phone-pad';
-  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
-}) {
-  const { icon, ...rest } = props;
-
-  return (
-    <View style={styles.inputOuter}>
-      <LinearGradient
-        colors={['rgba(217, 179, 95, 0.9)', 'rgba(217, 179, 95, 0.35)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.inputBorder}
-      >
-        <View style={styles.inputInner}>
-          <Ionicons
-            name={icon}
-            size={18}
-            color="rgba(255,255,255,0.85)"
-            style={{ marginRight: 10 }}
-          />
-          <TextInput
-            placeholderTextColor="rgba(255,255,255,0.60)"
-            style={styles.input}
-            {...rest}
-          />
-        </View>
-      </LinearGradient>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1 },
-  container: {
+  flex: {
+    flex: 1,
+  },
+  screenContent: {
+    paddingBottom: 24,
+  },
+  content: {
     flexGrow: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 28,
-    paddingHorizontal: 18,
+    paddingBottom: 24,
   },
-  glow: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 260,
-    backgroundColor: 'rgba(233, 197, 108, 0.22)',
-    opacity: 0.9,
-    transform: [{ scale: 1.2 }],
+  heroSection: {
+    paddingVertical: 2,
   },
-  glowTopRight: { top: -80, right: -120 },
-  glowBottomRight: { bottom: -110, right: -130 },
-  glowBottomLeft: { bottom: -150, left: -140, opacity: 0.55 },
-  phoneFrame: {
-    width: 340,
-    maxWidth: '100%',
-    borderRadius: 34,
-    paddingTop: 34,
-    paddingHorizontal: 20,
-    paddingBottom: 22,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-    overflow: 'hidden',
-  },
-  phoneNotch: {
-    position: 'absolute',
-    top: 10,
+  brandCard: {
     alignSelf: 'center',
-    width: 120,
-    height: 26,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.60)',
-  },
-  logoWrap: { alignItems: 'center', marginTop: 8 },
-  logoStage: {
-    width: 228,
-    height: 228,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
     alignItems: 'center',
+    gap: 2,
+  },
+  brandLogo: {
     justifyContent: 'center',
   },
-  logoHalo: {
-    position: 'absolute',
-    width: 216,
-    height: 216,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 215, 0, 0.15)',
-    shadowColor: '#FFD700',
-    shadowOpacity: 0.48,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 0 },
+  brandName: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.display,
+    fontSize: 50,
+    letterSpacing: 1.1,
+    ...(Platform.OS === 'web'
+      ? ({
+          textShadow: '0px 3px 12px rgba(212, 175, 55, 0.42)',
+        } as any)
+      : {
+          textShadowColor: 'rgba(212,175,55,0.42)',
+          textShadowOffset: { width: 0, height: 3 },
+          textShadowRadius: 12,
+        }),
   },
-  logoImage: {
-    width: 210,
-    height: 210,
-    shadowColor: 'rgba(255, 215, 0, 0.9)',
-    shadowOpacity: 0.65,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 0 },
+  brandCaption: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodySemiBold,
+    fontSize: 22,
+    letterSpacing: 0.85,
+    ...(Platform.OS === 'web'
+      ? ({
+          textShadow: '0px 0px 10px rgba(212, 175, 55, 0.85)',
+        } as any)
+      : {
+          textShadowColor: 'rgba(212,175,55,0.85)',
+          textShadowOffset: { width: 0, height: 0 },
+          textShadowRadius: 10,
+        }),
   },
-  brand: {
-    marginTop: 10,
-    color: '#FFD700',
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 3,
-    textShadowColor: 'rgba(255, 215, 0, 0.55)',
-    textShadowRadius: 10,
+  trustRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  tagline: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 13,
-  },
-  title: {
-    marginTop: 18,
-    marginBottom: 14,
-    textAlign: 'center',
-    color: '#FFD700',
-    fontSize: 30,
-    fontWeight: '800',
-    textShadowColor: 'rgba(255, 215, 0, 0.55)',
-    textShadowRadius: 10,
-  },
-  error: {
-    color: '#f3b0b0',
-    textAlign: 'center',
-    marginBottom: 8,
-    fontSize: 12,
-  },
-  cardOuter: {
-    marginTop: 8,
-    borderRadius: 22,
-    padding: 1.2,
-    borderColor: 'rgba(230, 196, 106, 0.20)',
+  trustPill: {
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-  },
-  card: {
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  inputOuter: { marginTop: 14 },
-  inputBorder: {
-    borderRadius: 18,
-    padding: 1.2,
-  },
-  inputInner: {
-    borderRadius: 17,
-    paddingHorizontal: 14,
-    height: 50,
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(24,2,31,0.52)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.18)',
+    gap: 5,
+  },
+  trustText: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  registerTitle: {
+    color: COLORS.offWhite,
+    fontFamily: FONT.displayBold,
+    fontSize: 36,
+    lineHeight: 38,
+    marginTop: 14,
+    marginBottom: 16,
+    textAlign: 'center',
+    letterSpacing: 0.8,
+  },
+  formCard: {
+    paddingTop: 20,
+  },
+  label: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.bodyMedium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  labelSpacing: {
+    marginTop: 12,
+  },
+  inputRow: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  inputIcon: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 1,
   },
   input: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 14,
+    borderWidth: 1,
+    borderColor: COLORS.strokeSoft,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    color: COLORS.offWhite,
+    fontFamily: FONT.body,
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  btnWrap: { marginTop: 18 },
-  btn: {
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
+  inputWithIcon: {
+    paddingLeft: 38,
+  },
+  inputFocused: {
+    borderColor: COLORS.goldPrimary,
+    backgroundColor: 'rgba(212,175,55,0.08)',
+  },
+  inputDisabled: {
+    opacity: 0.76,
+  },
+  passwordWrap: {
+    position: 'relative',
     justifyContent: 'center',
   },
-  btnDisabled: {
-    opacity: 0.7,
+  passwordInput: {
+    paddingLeft: 38,
+    paddingRight: 42,
   },
-  btnText: {
-    color: '#1C0C2A',
-    fontSize: 16,
-    fontWeight: '800',
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   termsRow: {
-    marginTop: 16,
+    marginTop: 14,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  termsCheckbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.75)',
-    marginTop: 2,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  termsCheckboxChecked: {
-    backgroundColor: '#FFD700',
-    borderColor: '#FFD700',
+    gap: 8,
   },
   termsText: {
     flex: 1,
-    color: 'rgba(255,255,255,0.78)',
+    color: COLORS.textBody,
+    fontFamily: FONT.body,
     fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 17,
   },
-  loginRow: {
-    marginTop: 14,
-    flexDirection: 'row',
+  helpRow: {
+    marginTop: 8,
+    alignItems: 'flex-end',
+  },
+  helpLinkText: {
+    color: COLORS.goldChampagne,
+    fontFamily: FONT.body,
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  statusBlock: {
+    minHeight: 24,
+    marginTop: 8,
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  loginText: { color: 'rgba(255,255,255,0.70)', fontSize: 12.5 },
-  loginLink: {
-    color: '#FFD700',
-    fontSize: 12.5,
-    fontWeight: '700',
-    textShadowColor: 'rgba(255, 215, 0, 0.45)',
-    textShadowRadius: 7,
-  },
-  footer: {
-    marginTop: 18,
-    textAlign: 'center',
-    color: 'rgba(255,255,255,0.60)',
+  errorText: {
+    color: COLORS.danger,
+    fontFamily: FONT.body,
     fontSize: 12,
+  },
+  successText: {
+    color: COLORS.success,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  hintText: {
+    marginTop: 4,
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+  },
+  loadingButton: {
+    marginTop: 12,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.stroke,
+    backgroundColor: 'rgba(212,175,55,0.14)',
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: COLORS.goldGlow,
+    fontFamily: FONT.bodySemiBold,
+    letterSpacing: 0.5,
+  },
+  linksRow: {
+    marginTop: 14,
+    gap: 8,
+  },
+  linkText: {
+    color: COLORS.textMuted,
+    fontFamily: FONT.body,
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
 });

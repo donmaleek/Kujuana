@@ -5,14 +5,14 @@ import { NextRequest, NextResponse } from 'next/server'
  * (marketing)  -> public
  * (auth)       -> public
  * (onboarding) -> auth required
- * (dashboard)  -> auth + profile completed
+ * (dashboard)  -> auth
  * (admin)      -> auth + role admin/manager/matchmaker
  *
  * We gate using lightweight cookies set at login.
  * Cookie names:
  *  - kp_at: access/session marker (truthy means authenticated)
  *  - kp_role: user role
- *  - kp_pc: "1" if profile completed
+ *  - kp_pc: "1" if profile completed (used to guide default routing)
  */
 
 const COOKIE_ACCESS = 'kp_at'
@@ -92,10 +92,10 @@ export function middleware(req: NextRequest) {
   // If onboarding area: allow even if profile not complete
   if (isOnboardingArea(pathname)) return NextResponse.next()
 
-  // Dashboard requires completed profile
-  if (isDashboardArea(pathname) && !profileCompleted) {
+  // For incomplete profiles, keep dashboard access but funnel to /profile first.
+  if (isDashboardArea(pathname) && !profileCompleted && !pathname.startsWith('/profile')) {
     const url = req.nextUrl.clone()
-    url.pathname = '/step/1-plan'
+    url.pathname = '/profile'
     return NextResponse.redirect(url)
   }
 

@@ -1,151 +1,182 @@
 import { Redirect, Tabs } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { theme } from '@/lib/config/theme';
-import { resolveOnboardingRoute } from '@/lib/utils/navigation';
-import { useAuthStore } from '@/store/auth-store';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import type { ComponentProps } from 'react';
+import { COLORS, FONT, RADIUS } from '@/lib/theme/tokens';
+import { useSession } from '@/lib/state/session';
 
-type IconName = keyof typeof Ionicons.glyphMap;
+type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
-const TAB_CONFIG: Record<string, { label: string; icon: IconName; activeIcon: IconName }> = {
-  home: {
-    label: 'Discover',
-    icon: 'compass-outline',
-    activeIcon: 'compass',
-  },
-  matches: {
-    label: 'Matches',
-    icon: 'heart-outline',
-    activeIcon: 'heart',
-  },
-  upgrade: {
-    label: 'Upgrade',
-    icon: 'diamond-outline',
-    activeIcon: 'diamond',
-  },
-  profile: {
-    label: 'Profile',
-    icon: 'person-outline',
-    activeIcon: 'person',
-  },
-  settings: {
-    label: 'Settings',
-    icon: 'settings-outline',
-    activeIcon: 'settings',
-  },
-};
-
-function TabBarIcon({
-  routeName,
-  focused,
-  color,
-}: {
-  routeName: string;
-  focused: boolean;
-  color: string;
-}) {
-  const config = TAB_CONFIG[routeName];
-  const iconName = config ? (focused ? config.activeIcon : config.icon) : 'ellipse-outline';
-  const isUpgrade = routeName === 'upgrade';
-
-  if (isUpgrade) {
-    return (
-      <LinearGradient
-        colors={focused ? ['#FFE680', '#FFD700', '#D9A300'] : ['rgba(255,215,0,0.22)', 'rgba(255,215,0,0.10)']}
-        start={{ x: 0.1, y: 0.1 }}
-        end={{ x: 0.9, y: 0.9 }}
-        style={styles.upgradePill}
-      >
-        <Ionicons name={iconName} size={18} color={focused ? '#1C102D' : theme.colors.primary} />
-      </LinearGradient>
-    );
-  }
-
+function icon(name: IconName, color: string, focused: boolean) {
   return (
-    <View style={styles.iconWrap}>
-      {focused && <View style={styles.activeDot} />}
-      <Ionicons name={iconName} size={22} color={color} />
-    </View>
+    <MaterialCommunityIcons
+      name={name}
+      size={focused ? 24 : 22}
+      color={color}
+      style={focused ? styles.focusedIcon : undefined}
+    />
   );
 }
 
-export default function TabsLayout() {
-  const status = useAuthStore((state) => state.status);
-  const profile = useAuthStore((state) => state.profile);
+function blurActiveElementOnWeb() {
+  if (Platform.OS !== 'web') return;
+  if (typeof document === 'undefined') return;
+  const active = document.activeElement as HTMLElement | null;
+  active?.blur?.();
+}
 
-  if (status === 'signed_out') {
-    return <Redirect href="/(auth)/welcome" />;
+function handleTabPress() {
+  blurActiveElementOnWeb();
+  Haptics.selectionAsync();
+}
+
+export default function TabsLayout() {
+  const { status } = useSession();
+
+  if (status === 'bootstrapping') {
+    return (
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator size="large" color={COLORS.goldPrimary} />
+      </View>
+    );
   }
 
-  if (!profile?.onboardingComplete) {
-    return <Redirect href={resolveOnboardingRoute(profile)} />;
+  if (status !== 'signed_in') {
+    return <Redirect href="/(auth)/login" />;
   }
 
   return (
     <Tabs
-      screenOptions={({ route }) => ({
+      screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: 'rgba(184,169,205,0.65)',
-        tabBarStyle: {
-          backgroundColor: theme.colors.canvasStrong,
-          borderTopColor: 'rgba(255,215,0,0.15)',
-          borderTopWidth: 1,
-          height: 72,
-          paddingBottom: 10,
-          paddingTop: 6,
-          elevation: 20,
-          shadowColor: '#FFD700',
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: -4 },
-        },
+        tabBarHideOnKeyboard: true,
+        tabBarActiveTintColor: COLORS.goldChampagne,
+        tabBarInactiveTintColor: 'rgba(245, 230, 179, 0.56)',
         tabBarLabelStyle: {
-          fontSize: 10,
-          fontFamily: theme.font.sansBold,
-          letterSpacing: 0.3,
-          marginTop: 2,
+          fontFamily: FONT.bodyMedium,
+          fontSize: 11,
+          marginBottom: 4,
+          letterSpacing: 0.2,
         },
-        tabBarIcon: ({ focused, color }) => (
-          <TabBarIcon routeName={route.name} focused={focused} color={color} />
-        ),
-      })}
+        tabBarStyle: {
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(212, 175, 55, 0.22)',
+          backgroundColor: 'rgba(24, 2, 31, 0.95)',
+          height: 82,
+          paddingTop: 8,
+          paddingBottom: 8,
+          position: 'absolute',
+          left: 14,
+          right: 14,
+          bottom: 16,
+          borderRadius: RADIUS.xl,
+        },
+      }}
     >
-      <Tabs.Screen name="home" options={{ title: TAB_CONFIG.home.label }} />
-      <Tabs.Screen name="matches" options={{ title: TAB_CONFIG.matches.label }} />
-      <Tabs.Screen name="upgrade" options={{ title: TAB_CONFIG.upgrade.label }} />
-      <Tabs.Screen name="profile" options={{ title: TAB_CONFIG.profile.label }} />
-      <Tabs.Screen name="settings" options={{ title: TAB_CONFIG.settings.label }} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Overview',
+          tabBarIcon: ({ color, focused }) => icon('view-dashboard-outline', color, focused),
+        }}
+        listeners={{
+          tabPress: () => {
+            handleTabPress();
+          },
+        }}
+      />
+      <Tabs.Screen
+        name="matches"
+        options={{
+          title: 'Matches',
+          tabBarIcon: ({ color, focused }) => icon('heart-multiple-outline', color, focused),
+        }}
+        listeners={{
+          tabPress: () => {
+            handleTabPress();
+          },
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => icon('account-circle-outline', color, focused),
+        }}
+        listeners={{
+          tabPress: () => {
+            handleTabPress();
+          },
+        }}
+      />
+      <Tabs.Screen
+        name="subscription"
+        options={{
+          title: 'Plan',
+          tabBarIcon: ({ color, focused }) => icon('crown-outline', color, focused),
+        }}
+        listeners={{
+          tabPress: () => {
+            handleTabPress();
+          },
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, focused }) => icon('cog-outline', color, focused),
+        }}
+        listeners={{
+          tabPress: () => {
+            handleTabPress();
+          },
+        }}
+      />
+      <Tabs.Screen
+        name="help"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="blog"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="safety"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="contact"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
-  iconWrap: {
+  loadingWrap: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    backgroundColor: COLORS.purpleDeepest,
   },
-  activeDot: {
-    position: 'absolute',
-    top: -6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.primary,
-  },
-  upgradePill: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -8,
-    shadowColor: theme.colors.primary,
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 6,
+  focusedIcon: {
+    ...(Platform.OS === 'web'
+      ? ({
+          textShadow: '0px 0px 8px rgba(212, 175, 55, 0.35)',
+        } as any)
+      : {
+          textShadowColor: 'rgba(212, 175, 55, 0.35)',
+          textShadowRadius: 8,
+        }),
   },
 });

@@ -6,6 +6,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useDashUser } from '../dash-context'
 import { getApiBase } from '@/lib/api-base'
 
@@ -35,6 +36,8 @@ const FIELD_CLASS =
 
 const TEXTAREA_CLASS =
   'w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/85 placeholder:text-white/35 outline-none transition focus:border-[rgba(212,175,55,0.35)] focus:ring-1 focus:ring-[rgba(212,175,55,0.18)]'
+
+const BIO_VISION_MIN_LENGTH = 60
 
 function tierLabel(tier?: string) {
   if (tier === 'vip') return 'VIP'
@@ -66,6 +69,7 @@ export default function ProfilePage() {
   const { user, refetch } = useDashUser()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingIdentity, setSavingIdentity] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loadedForm, setLoadedForm] = useState<ProfileDTO | null>(null)
@@ -155,6 +159,8 @@ export default function ProfilePage() {
     return Math.round((checks / 5) * 100)
   }, [form])
 
+  const onboardingIncomplete = !(user?.onboardingComplete || false)
+
   const name = (form.fullName || user?.fullName || 'Member').trim()
   const firstName = useMemo(() => name.split(/\s+/).filter(Boolean)[0] || 'Member', [name])
   const initials = useMemo(() => {
@@ -179,6 +185,9 @@ export default function ProfilePage() {
   const visionPreview =
     (form.relationshipVision || '').trim() ||
     'Describe the relationship you want, the pace you prefer, and the future you are building.'
+  const bioLength = (form.bio || '').trim().length
+  const visionLength = (form.relationshipVision || '').trim().length
+  const bioVisionReadyForCompletion = bioLength >= BIO_VISION_MIN_LENGTH && visionLength >= BIO_VISION_MIN_LENGTH
 
   async function save() {
     setSaving(true)
@@ -215,6 +224,42 @@ export default function ProfilePage() {
     }
   }
 
+  async function saveBioVision() {
+    if (!bioVisionReadyForCompletion) {
+      setError(`Bio and relationship vision must each be at least ${BIO_VISION_MIN_LENGTH} characters.`)
+      setSuccess(null)
+      return
+    }
+
+    setSavingIdentity(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      await api('/profile/me', {
+        method: 'PUT',
+        body: JSON.stringify({
+          bio: form.bio?.trim() || '',
+          relationshipVision: form.relationshipVision?.trim() || '',
+        }),
+      })
+      setLoadedForm((prev) =>
+        prev
+          ? {
+              ...prev,
+              bio: form.bio,
+              relationshipVision: form.relationshipVision,
+            }
+          : prev
+      )
+      setSuccess('Bio and relationship vision saved successfully.')
+      await refetch()
+    } catch (e: any) {
+      setError(e?.message || 'Could not save bio and relationship vision.')
+    } finally {
+      setSavingIdentity(false)
+    }
+  }
+
   function resetChanges() {
     if (!loadedForm) return
     setForm(loadedForm)
@@ -232,6 +277,41 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-5">
+      {onboardingIncomplete ? (
+        <section className="rounded-2xl border border-[rgba(212,175,55,0.22)] bg-[rgba(212,175,55,0.08)] p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--gold-champagne)]">Next Step</p>
+              <h2 className="mt-1 font-[var(--font-cormorant,serif)] text-2xl text-white/95">Continue profile completion</h2>
+              <p className="mt-1 text-sm text-white/75">
+                You can keep editing this profile page, or continue the guided onboarding steps anytime.
+              </p>
+              {!bioVisionReadyForCompletion ? (
+                <p className="mt-2 text-xs text-[rgba(245,230,179,0.92)]">
+                  Complete both Bio and Relationship Vision to at least {BIO_VISION_MIN_LENGTH} characters to continue.
+                </p>
+              ) : null}
+            </div>
+            {bioVisionReadyForCompletion ? (
+              <Link
+                href="/step/1-plan"
+                className="inline-flex items-center justify-center rounded-xl border border-[rgba(212,175,55,0.30)] bg-[rgba(212,175,55,0.14)] px-4 py-2 text-sm text-[var(--gold-champagne)] transition hover:bg-[rgba(212,175,55,0.20)]"
+              >
+                Continue onboarding
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/50"
+              >
+                Continue onboarding
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(74,22,99,0.45)_0%,rgba(14,14,20,0.82)_68%)] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.38)] md:p-6">
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(212,175,55,0.24)_0%,transparent_70%)]" />
         <div className="pointer-events-none absolute -bottom-20 -left-20 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(74,22,99,0.35)_0%,transparent_72%)]" />
@@ -409,6 +489,9 @@ export default function ProfilePage() {
                   className={TEXTAREA_CLASS}
                   placeholder="Who are you and what kind of life are you building?"
                 />
+                <span className={cx('text-[11px]', bioLength >= BIO_VISION_MIN_LENGTH ? 'text-emerald-200/75' : 'text-white/45')}>
+                  {bioLength} / {BIO_VISION_MIN_LENGTH} characters
+                </span>
               </label>
 
               <label className="grid gap-2">
@@ -420,7 +503,25 @@ export default function ProfilePage() {
                   className={TEXTAREA_CLASS}
                   placeholder="Describe the relationship pace, values, and future you want."
                 />
+                <span className={cx('text-[11px]', visionLength >= BIO_VISION_MIN_LENGTH ? 'text-emerald-200/75' : 'text-white/45')}>
+                  {visionLength} / {BIO_VISION_MIN_LENGTH} characters
+                </span>
               </label>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={saveBioVision}
+                  disabled={savingIdentity || saving}
+                  className={cx(
+                    'rounded-xl border px-4 py-2 text-sm transition',
+                    'border-[rgba(212,175,55,0.30)] bg-[rgba(212,175,55,0.10)] text-[var(--gold-champagne)] hover:bg-[rgba(212,175,55,0.18)]',
+                    (savingIdentity || saving) && 'opacity-70'
+                  )}
+                >
+                  {savingIdentity ? 'Saving bio & vision...' : 'Save bio & vision'}
+                </button>
+              </div>
 
               <label className="grid gap-2">
                 <span className="text-xs text-white/60">Non-negotiables (one per line)</span>

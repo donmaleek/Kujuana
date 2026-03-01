@@ -15,10 +15,25 @@ import type { Request, Express } from 'express';
 export function createApp(): Express {
   const app = express();
 
+  const normalizeOrigin = (origin: string) => origin.trim().replace(/\/+$/, '');
+  const devLocalOriginPattern = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+  const devOrigins =
+    env.NODE_ENV === 'production'
+      ? []
+      : [
+          'http://localhost:3000',
+          'http://127.0.0.1:3000',
+          'http://localhost:8081',
+          'http://127.0.0.1:8081',
+          'http://localhost:19006',
+          'http://127.0.0.1:19006',
+        ];
+
   const allowedOrigins = Array.from(
     new Set(
-      [env.WEB_BASE_URL, ...(process.env['WEB_ALLOWED_ORIGINS'] ?? '').split(',')]
-        .map((origin) => origin.trim())
+      [env.WEB_BASE_URL, ...devOrigins, ...(process.env['WEB_ALLOWED_ORIGINS'] ?? '').split(',')]
+        .map((origin) => normalizeOrigin(origin))
         .filter(Boolean),
     ),
   );
@@ -45,7 +60,11 @@ export function createApp(): Express {
   const corsOptions: CorsOptions = {
     origin(origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
+      if (env.NODE_ENV !== 'production' && devLocalOriginPattern.test(normalizedOrigin)) {
+        return callback(null, true);
+      }
       logger.warn({ origin }, 'CORS origin blocked');
       return callback(null, false);
     },

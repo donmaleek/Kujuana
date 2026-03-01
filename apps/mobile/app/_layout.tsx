@@ -1,55 +1,117 @@
 import { useEffect } from 'react';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { ActivityIndicator, LogBox, Platform, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
 import {
-  CormorantGaramond_400Regular,
-  CormorantGaramond_500Medium,
-  CormorantGaramond_600SemiBold,
-  CormorantGaramond_700Bold,
-  useFonts as useCormorantFonts,
-} from '@expo-google-fonts/cormorant-garamond';
-import {
+  Jost_300Light,
   Jost_400Regular,
   Jost_500Medium,
   Jost_600SemiBold,
-  Jost_700Bold,
-  useFonts as useJostFonts,
 } from '@expo-google-fonts/jost';
-import { queryClient } from '@/lib/api/query-client';
-import { hydrateSession } from '@/lib/auth/bootstrap';
-import { useAuthStore } from '@/store/auth-store';
+import { CormorantGaramond_600SemiBold, CormorantGaramond_700Bold } from '@expo-google-fonts/cormorant-garamond';
+import { COLORS, FONT } from '@/lib/theme/tokens';
+import { SessionProvider } from '@/lib/state/session';
+import { AppDataProvider } from '@/lib/state/app-data';
+import { KujuanaLogo } from '@/components/ui/KujuanaLogo';
+
+const SUPPRESSED_WEB_WARNINGS = [
+  'props.pointerEvents is deprecated. Use style.pointerEvents',
+  'Blocked aria-hidden on an element because its descendant retained focus.',
+] as const;
 
 export default function RootLayout() {
-  const setSignedOut = useAuthStore((state) => state.setSignedOut);
-  const [jostLoaded] = useJostFonts({
+  const pathname = usePathname();
+  const [fontsLoaded] = useFonts({
+    Jost_300Light,
     Jost_400Regular,
     Jost_500Medium,
     Jost_600SemiBold,
-    Jost_700Bold,
-  });
-  const [cormorantLoaded] = useCormorantFonts({
-    CormorantGaramond_400Regular,
-    CormorantGaramond_500Medium,
     CormorantGaramond_600SemiBold,
     CormorantGaramond_700Bold,
   });
 
   useEffect(() => {
-    hydrateSession().catch(() => {
-      setSignedOut();
-    });
-  }, [setSignedOut]);
+    LogBox.ignoreLogs([
+      'props.pointerEvents is deprecated. Use style.pointerEvents',
+    ]);
 
-  if (!jostLoaded || !cormorantLoaded) return null;
+    if (Platform.OS !== 'web') return;
+
+    type ConsoleMethod = (...data: unknown[]) => void;
+    type ConsoleWithFilterFlag = Console & { __kujuanaFilterInstalled?: boolean };
+
+    const consoleWithFlag = console as ConsoleWithFilterFlag;
+    if (consoleWithFlag.__kujuanaFilterInstalled) return;
+
+    const shouldSuppress = (args: unknown[]) => {
+      const text = args.map((item) => String(item)).join(' ');
+      return SUPPRESSED_WEB_WARNINGS.some((warning) => text.includes(warning));
+    };
+
+    const originalWarn = console.warn.bind(console) as ConsoleMethod;
+    const originalError = console.error.bind(console) as ConsoleMethod;
+
+    console.warn = (...args: unknown[]) => {
+      if (shouldSuppress(args)) return;
+      originalWarn(...args);
+    };
+
+    console.error = (...args: unknown[]) => {
+      if (shouldSuppress(args)) return;
+      originalError(...args);
+    };
+
+    consoleWithFlag.__kujuanaFilterInstalled = true;
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (typeof document === 'undefined') return;
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (!activeElement || activeElement === document.body) return;
+    activeElement.blur();
+  }, [pathname]);
+
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.loadingRoot}>
+          <KujuanaLogo size={52} showWordmark={false} />
+          <ActivityIndicator size="large" color={COLORS.goldPrimary} />
+          <Text style={styles.loadingText}>Loading Kujuana</Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false }} />
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <SessionProvider>
+        <AppDataProvider>
+          <StatusBar style="light" />
+          <Stack screenOptions={{ headerShown: false, animation: Platform.OS === 'web' ? 'none' : 'fade' }}>
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(tabs)" />
+          </Stack>
+        </AppDataProvider>
+      </SessionProvider>
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingRoot: {
+    flex: 1,
+    backgroundColor: COLORS.purpleDeepest,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    fontFamily: FONT.bodyMedium,
+    color: COLORS.goldChampagne,
+    letterSpacing: 0.4,
+  },
+});
