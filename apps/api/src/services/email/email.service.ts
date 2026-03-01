@@ -15,6 +15,8 @@ const smtpTransport = env.SMTP_HOST
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
       secure: env.SMTP_SECURE,
+      // Disable TLS when no credentials — plain SMTP relay (e.g. local Postfix)
+      ignoreTLS: !env.SMTP_USER,
       auth:
         env.SMTP_USER && env.SMTP_PASS
           ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
