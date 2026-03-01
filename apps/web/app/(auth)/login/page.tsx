@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { InputField, FormError, AuthCard } from '../_shared'
 
 function readApiErrorMessage(payload: any, fallback: string): string {
@@ -33,7 +33,6 @@ function resolveSafeNextPath(value: string | null): string {
 
 export default function LoginPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [form, setForm] = useState({ email: '', password: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -58,7 +57,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const normalizedEmail = form.email.trim().toLowerCase()
-      const requestedNextPath = resolveSafeNextPath(searchParams.get('next'))
+      const requestedNextPath = resolveSafeNextPath(typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null)
 
       const res = await fetch('/api/v1/auth/login', {
         method: 'POST',

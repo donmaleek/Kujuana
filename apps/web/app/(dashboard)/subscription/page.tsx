@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { useDashUser } from '../dash-context'
 import { getApiBase } from '@/lib/api-base'
 import { PaymentModal } from '@/components/shared/PaymentModal'
@@ -47,7 +46,6 @@ type ModalState = {
 
 export default function SubscriptionPage() {
   const { user, refetch } = useDashUser()
-  const searchParams = useSearchParams()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,7 +85,7 @@ export default function SubscriptionPage() {
 
   // Handle return from payment gateway
   useEffect(() => {
-    if (searchParams.get('status') === 'return') {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('status') === 'return') {
       setReturnBanner('verifying')
       // Re-fetch sub after a short delay to let webhook process
       const timer = setTimeout(async () => {
