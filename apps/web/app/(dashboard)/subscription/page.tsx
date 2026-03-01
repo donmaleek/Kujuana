@@ -2,6 +2,7 @@
 // SUBSCRIPTION PAGE
 // Path: kujuana/apps/web/app/(dashboard)/subscription/page.tsx
 // ─────────────────────────────────────────────────────────────────────
+export const dynamic = 'force-dynamic'
 
 'use client'
 
