@@ -83,6 +83,32 @@ export function AuthCard({
         }}
       />
 
+      {/* Back to home */}
+      <Link
+        href="/"
+        style={{
+          position: 'absolute',
+          top: '20px',
+          left: '24px',
+          zIndex: 10,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontFamily: 'var(--font-jost, sans-serif)',
+          fontSize: '0.8rem',
+          color: 'rgba(196,168,130,0.6)',
+          textDecoration: 'none',
+          transition: 'color 0.2s',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--gold-champagne)')}
+        onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(196,168,130,0.6)')}
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Home
+      </Link>
+
       {/* Card */}
       <div
         style={{

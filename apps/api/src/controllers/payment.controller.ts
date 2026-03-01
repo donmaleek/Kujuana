@@ -4,6 +4,7 @@ import { webhookService } from '../services/payments/webhook.service.js';
 import { pesapalGateway } from '../services/payments/pesapal.gateway.js';
 import { flutterwaveGateway } from '../services/payments/flutterwave.gateway.js';
 import { paystackGateway } from '../services/payments/paystack.gateway.js';
+import { stripeGateway } from '../services/payments/stripe.gateway.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { logger } from '../config/logger.js';
 import { Payment } from '../models/Payment.model.js';
@@ -42,13 +43,17 @@ export const paymentController = {
       const inferredGateway =
         typeof body['gateway'] === 'string'
           ? body['gateway'] === 'mpesa'
-            ? 'paystack'
+            ? 'mpesa'
             : body['gateway']
-          : method === 'flutterwave'
-            ? 'flutterwave'
-            : method === 'mpesa' || method === 'paystack'
-              ? 'paystack'
-              : 'pesapal';
+          : method === 'stripe'
+            ? 'stripe'
+            : method === 'flutterwave'
+              ? 'flutterwave'
+              : method === 'mpesa'
+                ? 'mpesa'
+                : method === 'paystack'
+                  ? 'paystack'
+                  : 'pesapal';
 
       const inferredCurrency =
         typeof body['currency'] === 'string'
@@ -330,6 +335,50 @@ export const paymentController = {
       }
 
       return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async stripeWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      const signatureHeader = String(req.headers['stripe-signature'] ?? '').trim();
+      if (!signatureHeader) return next(new AppError('Missing Stripe-Signature header', 400));
+
+      const rawBody = getRawPayload(req);
+      const { valid, event } = stripeGateway.verifySignature(rawBody, signatureHeader);
+
+      if (!valid || !event) {
+        return next(new AppError('Invalid Stripe webhook signature', 400));
+      }
+
+      // Only process completed checkout sessions
+      if (event.type !== 'checkout.session.completed') {
+        logger.info({ type: event.type }, 'Ignoring non-checkout Stripe webhook event');
+        return res.json({ status: 'IGNORED' });
+      }
+
+      const session = event.data.object;
+      if (session.payment_status !== 'paid') {
+        logger.info({ payment_status: session.payment_status }, 'Stripe session not paid — ignoring');
+        return res.json({ status: 'IGNORED' });
+      }
+
+      const paymentReference = session.metadata?.['paymentReference'];
+      if (!paymentReference) {
+        return next(new AppError('Missing paymentReference in Stripe session metadata', 400));
+      }
+
+      const gatewayTransactionRef = session.payment_intent ?? session.id;
+
+      await webhookService.handlePaymentSuccess({
+        paymentReference,
+        gateway: 'stripe',
+        gatewayTransactionRef,
+        webhookPayload: event as unknown as Record<string, unknown>,
+      });
+
+      res.json({ status: 'OK' });
     } catch (err) {
       next(err);
     }

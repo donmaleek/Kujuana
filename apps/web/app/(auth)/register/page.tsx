@@ -380,6 +380,28 @@ export default function RegisterPage() {
         }}
       >
         <div style={{ maxWidth: '440px', width: '100%', margin: '0 auto' }}>
+          {/* Back to home — visible on mobile where the brand panel is hidden */}
+          <Link
+            href="/"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontFamily: 'var(--font-jost, sans-serif)',
+              fontSize: '0.8rem',
+              color: 'rgba(196,168,130,0.6)',
+              textDecoration: 'none',
+              marginBottom: '32px',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--gold-champagne)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(196,168,130,0.6)')}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Home
+          </Link>
+
           <div style={{ marginBottom: '40px' }}>
             <span
               style={{

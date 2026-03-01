@@ -1,11 +1,20 @@
-import React from 'react'
-import type { Metadata } from 'next'
-import Link from 'next/link'
+'use client'
 
-export const metadata: Metadata = {
-  title: 'Pricing — Kujuana',
-  description:
-    "Compare Kujuana's Standard, Priority, and VIP matchmaking plans. From free nightly matching to fully curated VIP introductions.",
+import React, { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { getApiBase } from '@/lib/api-base'
+
+// Auth check: returns true if the user is logged in
+async function checkAuth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${getApiBase()}/auth/me`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -339,6 +348,19 @@ function FeatureValue({ value }: { value: CellValue }) {
    PAGE COMPONENT
 ──────────────────────────────────────────────────────────────────────── */
 export default function PricingPage() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    checkAuth().then(setIsLoggedIn)
+  }, [])
+
+  // Logged-in users go to /subscription to purchase; guests go to /register
+  function ctaHref(tierId: string): string {
+    if (isLoggedIn) return '/subscription'
+    if (tierId === 'standard') return '/register'
+    return `/register?plan=${tierId}`
+  }
+
   return (
     <>
       {/* ══════════════════════════════════════════════════════════════
@@ -552,15 +574,15 @@ export default function PricingPage() {
               {/* CTA */}
               {tier.ctaStyle === 'gold' ? (
                 <Link
-                  href={tier.ctaHref}
+                  href={ctaHref(tier.id)}
                   className="btn btn-gold"
                   style={{ width: '100%', textAlign: 'center' }}
                 >
-                  {tier.cta}
+                  {isLoggedIn ? 'Go to My Plan' : tier.cta}
                 </Link>
               ) : (
                 <Link
-                  href={tier.ctaHref}
+                  href={ctaHref(tier.id)}
                   className="btn btn-outline"
                   style={{
                     width: '100%',
@@ -569,7 +591,7 @@ export default function PricingPage() {
                       tier.id === 'vip' ? 'rgba(212,175,55,0.45)' : undefined,
                   }}
                 >
-                  {tier.cta}
+                  {isLoggedIn && tier.id !== 'standard' ? 'Go to My Plan' : tier.cta}
                 </Link>
               )}
             </div>

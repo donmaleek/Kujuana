@@ -48,6 +48,10 @@ const envSchema = z.object({
     'CustomerPayBillOnline',
   ),
 
+  STRIPE_SECRET_KEY: z.string().default(''),
+  STRIPE_PUBLISHABLE_KEY: z.string().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().default(''),
+
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().email().default('noreply@kujuana.com'),
 

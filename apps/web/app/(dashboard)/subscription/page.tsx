@@ -7,8 +7,10 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useDashUser } from '../dash-context'
 import { getApiBase } from '@/lib/api-base'
+import { PaymentModal } from '@/components/shared/PaymentModal'
 
 const API = getApiBase()
 
@@ -36,40 +38,63 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
 
+type ModalState = {
+  open: boolean
+  title: string
+  basePayload: Record<string, any>
+}
+
 export default function SubscriptionPage() {
   const { user, refetch } = useDashUser()
+  const searchParams = useSearchParams()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sub, setSub] = useState<SubDTO | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [modal, setModal] = useState<ModalState>({ open: false, title: '', basePayload: {} })
+  const [returnBanner, setReturnBanner] = useState<'verifying' | 'done' | null>(null)
+
+  // Fetch subscription
+  async function fetchSub() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api<any>('/subscriptions/me', { method: 'GET' })
+      const s = res?.data ?? res?.subscription ?? res
+      setSub({
+        tier: (s?.tier || s?.plan || 'standard') as Tier,
+        credits: Number(s?.credits ?? 0),
+        renewsAt: s?.renewsAt ?? s?.nextBillingAt ?? null,
+        status: s?.status ?? 'active',
+      })
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load subscription')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
     ;(async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api<any>('/subscriptions/me', { method: 'GET' })
-        const s = res?.data ?? res?.subscription ?? res
-        const dto: SubDTO = {
-          tier: (s?.tier || s?.plan || 'standard') as Tier,
-          credits: Number(s?.credits ?? 0),
-          renewsAt: s?.renewsAt ?? s?.nextBillingAt ?? null,
-          status: s?.status ?? 'active',
-        }
-        if (!mounted) return
-        setSub(dto)
-      } catch (e: any) {
-        if (!mounted) return
-        setError(e?.message || 'Failed to load subscription')
-      } finally {
-        if (!mounted) return
-        setLoading(false)
-      }
+      await fetchSub()
+      if (!mounted) return
     })()
-    return () => {
-      mounted = false
+    return () => { mounted = false }
+  }, [])
+
+  // Handle return from payment gateway
+  useEffect(() => {
+    if (searchParams.get('status') === 'return') {
+      setReturnBanner('verifying')
+      // Re-fetch sub after a short delay to let webhook process
+      const timer = setTimeout(async () => {
+        await fetchSub()
+        setReturnBanner('done')
+        setTimeout(() => setReturnBanner(null), 3000)
+      }, 4000)
+      return () => clearTimeout(timer)
     }
   }, [])
 
@@ -83,8 +108,7 @@ export default function SubscriptionPage() {
         price: 'Free',
         desc: 'Nightly matching. Slow, intentional, no credits.',
         perks: ['Nightly batch matching', 'Up to 3 active matches', 'Basic filters'],
-        cta: 'Current on free',
-        primary: false,
+        purchases: [] as { label: string; purpose: string }[],
       },
       {
         id: 'priority',
@@ -92,8 +116,11 @@ export default function SubscriptionPage() {
         price: 'Pay per match',
         desc: 'Instant matching using credits. You control speed.',
         perks: ['Instant processing', 'Credits never double-charge (idempotent)', 'Best for busy professionals'],
-        cta: 'Buy credits',
-        primary: true,
+        purchases: [
+          { label: 'Buy 1 match — KES 500', purpose: 'priority_single' },
+          { label: 'Buy 5-pack — KES 2,000 (save KES 500)', purpose: 'priority_bundle_5' },
+          { label: 'Buy 10-pack — KES 3,500 (save KES 1,500)', purpose: 'priority_bundle_10' },
+        ],
       },
       {
         id: 'vip',
@@ -101,37 +128,16 @@ export default function SubscriptionPage() {
         price: 'KES 10,000 / month',
         desc: 'Curated matchmaking with matchmaker review.',
         perks: ['Curated introductions', 'Premium filters & add-ons', 'Confidential fields protected'],
-        cta: 'Upgrade to VIP',
-        primary: true,
+        purchases: [
+          { label: 'Upgrade to VIP — KES 10,000/month', purpose: 'vip_monthly' },
+        ],
       },
     ],
     []
   )
 
-  async function initiatePayment(purpose: string, method: 'mpesa' | 'paystack' | 'pesapal' | 'flutterwave') {
-    setBusy(purpose)
-    setError(null)
-    try {
-      const res = await api<any>('/payments/initiate', {
-        method: 'POST',
-        body: JSON.stringify({ purpose, method }),
-      })
-
-      // Typical behavior:
-      // - paystack/pesapal/flutterwave => returns { redirectUrl }
-      const redirectUrl = res?.data?.redirectUrl || res?.redirectUrl
-      if (redirectUrl) {
-        window.location.href = redirectUrl
-        return
-      }
-
-      // If no redirect, just refresh state
-      await refetch()
-      setBusy(null)
-    } catch (e: any) {
-      setError(e?.message || 'Payment initiation failed')
-      setBusy(null)
-    }
+  function openModal(title: string, purpose: string) {
+    setModal({ open: true, title, basePayload: { purpose } })
   }
 
   async function cancelRenewal() {
@@ -140,14 +146,7 @@ export default function SubscriptionPage() {
     try {
       await api('/subscriptions/cancel', { method: 'POST', body: JSON.stringify({}) })
       await refetch()
-      const res = await api<any>('/subscriptions/me', { method: 'GET' })
-      const s = res?.data ?? res?.subscription ?? res
-      setSub({
-        tier: (s?.tier || 'standard') as Tier,
-        credits: Number(s?.credits ?? 0),
-        renewsAt: s?.renewsAt ?? null,
-        status: s?.status ?? 'canceled',
-      })
+      await fetchSub()
     } catch (e: any) {
       setError(e?.message || 'Could not cancel')
     } finally {
@@ -157,6 +156,20 @@ export default function SubscriptionPage() {
 
   return (
     <div className="space-y-5">
+      {/* Return-from-gateway banner */}
+      {returnBanner && (
+        <div className={cx(
+          'rounded-2xl border p-4 text-sm transition-all',
+          returnBanner === 'verifying'
+            ? 'border-[rgba(212,175,55,0.3)] bg-[rgba(212,175,55,0.08)] text-[#F5E6B3]'
+            : 'border-green-500/30 bg-green-500/10 text-green-200'
+        )}>
+          {returnBanner === 'verifying'
+            ? '⏳ Verifying your payment — this takes a few seconds…'
+            : '✓ Payment confirmed! Your subscription has been updated.'}
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Subscription</p>
@@ -179,6 +192,7 @@ export default function SubscriptionPage() {
         </div>
       ) : null}
 
+      {/* Current subscription summary */}
       <div className="rounded-2xl border border-white/10 bg-black/10 p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -186,8 +200,8 @@ export default function SubscriptionPage() {
             <p className="mt-1 text-lg font-semibold text-white/90">{loading ? '—' : tier.toUpperCase()}</p>
             <p className="mt-1 text-xs text-white/50">
               Credits: <span className="text-white/80">{sub?.credits ?? user?.credits ?? 0}</span>
-              {sub?.renewsAt ? <> • Renews: <span className="text-white/80">{new Date(sub.renewsAt).toLocaleDateString()}</span></> : null}
-              {sub?.status ? <> • Status: <span className="text-white/80">{sub.status}</span></> : null}
+              {sub?.renewsAt ? <> · Renews: <span className="text-white/80">{new Date(sub.renewsAt).toLocaleDateString()}</span></> : null}
+              {sub?.status ? <> · Status: <span className="text-white/80">{sub.status}</span></> : null}
             </p>
           </div>
 
@@ -207,7 +221,7 @@ export default function SubscriptionPage() {
         </div>
       </div>
 
-      {/* Plans */}
+      {/* Plan cards */}
       <div className="grid gap-4 lg:grid-cols-3">
         {cards.map((c) => {
           const active = tier === (c.id as Tier)
@@ -227,78 +241,21 @@ export default function SubscriptionPage() {
               </ul>
 
               <div className="mt-5 space-y-2">
-                {c.id === 'priority' ? (
-                  <>
+                {c.purchases.length > 0 ? (
+                  c.purchases.map((purchase, i) => (
                     <button
-                      onClick={() => initiatePayment('priority_single', 'paystack')}
-                      disabled={busy === 'priority_single'}
+                      key={purchase.purpose}
+                      onClick={() => openModal(purchase.label, purchase.purpose)}
                       className={cx(
                         'w-full rounded-xl border px-4 py-2 text-sm transition',
-                        'border-[rgba(212,175,55,0.25)] bg-[rgba(212,175,55,0.10)] text-[var(--gold-champagne)] hover:bg-[rgba(212,175,55,0.14)]',
-                        busy === 'priority_single' && 'opacity-70'
+                        i === 0
+                          ? 'border-[rgba(212,175,55,0.25)] bg-[rgba(212,175,55,0.10)] text-[var(--gold-champagne,#E8D27C)] hover:bg-[rgba(212,175,55,0.14)]'
+                          : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/10'
                       )}
                     >
-                      {busy === 'priority_single' ? 'Starting…' : 'Buy 1 match (KES 500) via Paystack'}
+                      {purchase.label}
                     </button>
-                    <button
-                      onClick={() => initiatePayment('priority_5pack', 'paystack')}
-                      disabled={busy === 'priority_5pack'}
-                      className={cx(
-                        'w-full rounded-xl border px-4 py-2 text-sm transition',
-                        'border-white/10 bg-white/5 text-white/80 hover:bg-white/10',
-                        busy === 'priority_5pack' && 'opacity-70'
-                      )}
-                    >
-                      {busy === 'priority_5pack' ? 'Starting…' : 'Buy 5-pack (KES 2,000)'}
-                    </button>
-                    <button
-                      onClick={() => initiatePayment('priority_10pack', 'paystack')}
-                      disabled={busy === 'priority_10pack'}
-                      className={cx(
-                        'w-full rounded-xl border px-4 py-2 text-sm transition',
-                        'border-white/10 bg-white/5 text-white/80 hover:bg-white/10',
-                        busy === 'priority_10pack' && 'opacity-70'
-                      )}
-                    >
-                      {busy === 'priority_10pack' ? 'Starting…' : 'Buy 10-pack (KES 3,500)'}
-                    </button>
-                  </>
-                ) : c.id === 'vip' ? (
-                  <>
-                    <button
-                      onClick={() => initiatePayment('vip_monthly', 'paystack')}
-                      disabled={busy === 'vip_monthly'}
-                      className={cx(
-                        'w-full rounded-xl border px-4 py-2 text-sm transition',
-                        'border-[rgba(212,175,55,0.25)] bg-[rgba(212,175,55,0.10)] text-[var(--gold-champagne)] hover:bg-[rgba(212,175,55,0.14)]',
-                        busy === 'vip_monthly' && 'opacity-70'
-                      )}
-                    >
-                      {busy === 'vip_monthly' ? 'Starting…' : 'Upgrade to VIP via Paystack'}
-                    </button>
-                    <button
-                      onClick={() => initiatePayment('vip_monthly', 'pesapal')}
-                      disabled={busy === 'vip_monthly_pesapal'}
-                      className={cx(
-                        'w-full rounded-xl border px-4 py-2 text-sm transition',
-                        'border-white/10 bg-white/5 text-white/80 hover:bg-white/10',
-                        busy === 'vip_monthly_pesapal' && 'opacity-70'
-                      )}
-                    >
-                      Pay by Card (Pesapal)
-                    </button>
-                    <button
-                      onClick={() => initiatePayment('vip_monthly', 'flutterwave')}
-                      disabled={busy === 'vip_monthly_flutterwave'}
-                      className={cx(
-                        'w-full rounded-xl border px-4 py-2 text-sm transition',
-                        'border-white/10 bg-white/5 text-white/80 hover:bg-white/10',
-                        busy === 'vip_monthly_flutterwave' && 'opacity-70'
-                      )}
-                    >
-                      Pay Global (Flutterwave)
-                    </button>
-                  </>
+                  ))
                 ) : (
                   <button
                     disabled
@@ -319,6 +276,18 @@ export default function SubscriptionPage() {
           Priority guarantees speed and compatibility filtering. VIP adds human curation and deeper filtering. Either way, your clarity determines the quality of your outcomes.
         </p>
       </div>
+
+      {/* Payment modal */}
+      <PaymentModal
+        open={modal.open}
+        onOpenChange={(v) => setModal((m) => ({ ...m, open: v }))}
+        title={modal.title}
+        basePayload={modal.basePayload}
+        onSuccess={async () => {
+          await refetch()
+          await fetchSub()
+        }}
+      />
     </div>
   )
 }

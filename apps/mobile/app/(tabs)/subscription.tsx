@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppScreen } from '@/components/ui/AppScreen';
@@ -7,8 +7,8 @@ import { FadeIn } from '@/components/ui/FadeIn';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GoldButton } from '@/components/ui/GoldButton';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { CheckoutSheet, type CheckoutPlan } from '@/components/ui/CheckoutSheet';
 import { plans, priorityCreditBundles } from '@/lib/data/mock';
-import { API_CONFIG } from '@/lib/api/config';
 import { COLORS, FONT, GRADIENTS, RADIUS } from '@/lib/theme/tokens';
 import { useAppData } from '@/lib/state/app-data';
 import { useSession } from '@/lib/state/session';
@@ -18,10 +18,16 @@ function normalizeTier(tier: string | undefined): 'standard' | 'priority' | 'vip
   return 'standard';
 }
 
+const BUNDLE_PLANS: CheckoutPlan[] = [
+  { purpose: 'priority_single', label: 'Buy 1 Priority Match', price: 'KES 500' },
+  { purpose: 'priority_bundle_5', label: 'Buy 5 Credits', price: 'KES 2,000' },
+  { purpose: 'priority_bundle_10', label: 'Buy 10 Credits', price: 'KES 3,500' },
+];
+
 export default function SubscriptionScreen() {
   const { user } = useSession();
   const { profile, subscription, loading, refreshing, error, refreshAll } = useAppData();
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [checkout, setCheckout] = useState<CheckoutPlan | null>(null);
 
   const currentTier = normalizeTier(subscription?.tier || profile?.tier || user?.tier);
   const credits = subscription?.credits ?? subscription?.priorityCredits ?? profile?.credits ?? user?.credits ?? 0;
@@ -31,14 +37,17 @@ export default function SubscriptionScreen() {
     ? new Date(renewsAt).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })
     : 'Not scheduled';
 
-  async function openPricing(planId: string) {
-    try {
-      const url = `${API_CONFIG.webUrl}/pricing?plan=${encodeURIComponent(planId)}`;
-      await Linking.openURL(url);
-      setActionMessage(null);
-    } catch {
-      setActionMessage(`Open pricing in browser: ${API_CONFIG.webUrl}/pricing`);
-    }
+  function openCheckout(plan: CheckoutPlan) {
+    setCheckout(plan);
+  }
+
+  function closeCheckout() {
+    setCheckout(null);
+  }
+
+  function handleSuccess() {
+    setCheckout(null);
+    refreshAll();
   }
 
   return (
@@ -120,38 +129,69 @@ export default function SubscriptionScreen() {
                 ))}
               </View>
 
+              {/* Priority: show individual bundle buy buttons */}
               {plan.id === 'priority' ? (
                 <View style={styles.bundleWrap}>
                   <Text style={styles.bundleTitle}>Credit bundles</Text>
-                  {priorityCreditBundles.map((bundle) => (
-                    <View key={bundle.credits} style={styles.bundleRow}>
-                      <Text style={styles.bundleValue}>{`${bundle.credits} credit${bundle.credits > 1 ? 's' : ''}`}</Text>
-                      <Text style={styles.bundlePrice}>{bundle.price}</Text>
-                      <Text style={styles.bundleSaving}>{bundle.savings ?? ' '}</Text>
-                    </View>
-                  ))}
+                  {priorityCreditBundles.map((bundle, i) => {
+                    const bundlePlan = BUNDLE_PLANS[i];
+                    return (
+                      <View key={bundle.credits} style={styles.bundleRow}>
+                        <View style={styles.bundleInfo}>
+                          <Text style={styles.bundleValue}>{`${bundle.credits} credit${bundle.credits > 1 ? 's' : ''}`}</Text>
+                          <Text style={styles.bundlePrice}>{bundle.price}</Text>
+                          <Text style={styles.bundleSaving}>{bundle.savings ?? ' '}</Text>
+                        </View>
+                        {bundlePlan && (
+                          <GoldButton
+                            label="Buy"
+                            outlined={i > 0}
+                            onPress={() => openCheckout(bundlePlan)}
+                          />
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               ) : null}
 
               <GoldButton
                 label={
                   isCurrent
-                    ? 'Current plan'
+                    ? plan.id === 'priority'
+                      ? 'Current plan'
+                      : 'Current plan'
                     : plan.id === 'standard'
                       ? 'Get Started'
                       : plan.id === 'priority'
-                        ? 'Buy Credits'
-                        : 'Apply for VIP'
+                        ? 'Buy 1 Match (KES 500)'
+                        : 'Upgrade to VIP'
                 }
                 outlined={isCurrent}
-                onPress={isCurrent ? refreshAll : () => openPricing(plan.id)}
+                onPress={
+                  isCurrent
+                    ? refreshAll
+                    : plan.id === 'vip'
+                      ? () => openCheckout({ purpose: 'vip_monthly', label: 'VIP Monthly Membership', price: 'KES 10,000/month' })
+                      : plan.id === 'priority'
+                        ? () => openCheckout(BUNDLE_PLANS[0])
+                        : refreshAll
+                }
               />
             </GlassCard>
           </FadeIn>
         );
       })}
 
-      {actionMessage ? <Text style={styles.actionMessage}>{actionMessage}</Text> : null}
+      {/* Checkout bottom sheet */}
+      {checkout && (
+        <CheckoutSheet
+          visible
+          plan={checkout}
+          onClose={closeCheckout}
+          onSuccess={handleSuccess}
+        />
+      )}
     </AppScreen>
   );
 }
@@ -233,12 +273,6 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     fontFamily: FONT.body,
     fontSize: 12,
-  },
-  actionMessage: {
-    color: COLORS.textMuted,
-    fontFamily: FONT.body,
-    fontSize: 12,
-    marginTop: 2,
   },
   planTop: {
     flexDirection: 'row',
@@ -327,8 +361,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  bundleValue: {
+  bundleInfo: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  bundleValue: {
     color: COLORS.offWhite,
     fontFamily: FONT.bodyMedium,
     fontSize: 12,
@@ -339,8 +379,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   bundleSaving: {
-    minWidth: 90,
-    textAlign: 'right',
     color: COLORS.textMuted,
     fontFamily: FONT.body,
     fontSize: 11,

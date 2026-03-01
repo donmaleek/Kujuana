@@ -13,6 +13,7 @@ export function Navbar() {
   const nav = [
     { href: "/", label: "Home" },
     { href: "/pricing", label: "Pricing" },
+    { href: "/download", label: "Get App" },
     { href: "/dashboard", label: "Dashboard" },
   ];
 

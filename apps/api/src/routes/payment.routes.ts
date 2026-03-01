@@ -21,3 +21,5 @@ paymentRouter.post('/pesapal/webhook', paymentController.pesapalWebhook);
 paymentRouter.post('/flutterwave/webhook', paymentController.flutterwaveWebhook);
 paymentRouter.post('/paystack/webhook', paymentController.paystackWebhook);
 paymentRouter.post('/mpesa/webhook', paymentController.mpesaWebhook);
+paymentRouter.post('/webhook/stripe', paymentController.stripeWebhook);
+paymentRouter.post('/stripe/webhook', paymentController.stripeWebhook);

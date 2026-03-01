@@ -5,6 +5,7 @@ import { pesapalGateway } from './pesapal.gateway.js';
 import { flutterwaveGateway } from './flutterwave.gateway.js';
 import { mpesaGateway } from './mpesa.gateway.js';
 import { paystackGateway } from './paystack.gateway.js';
+import { stripeGateway } from './stripe.gateway.js';
 import { AppError } from '../../middleware/error.middleware.js';
 import { TIER_CONFIG, SubscriptionTier, normalizePhone, isValidE164 } from '@kujuana/shared';
 import type { InitiatePaymentInput, PaymentPurpose } from '@kujuana/shared';
@@ -120,6 +121,19 @@ async function initiateGateway(input: {
     return { checkoutUrl };
   }
 
+  if (input.gateway === 'stripe') {
+    const returnBase = input.returnUrl ?? `${env.WEB_BASE_URL}/subscription`;
+    const checkoutUrl = await stripeGateway.initiate({
+      paymentReference: input.paymentReference,
+      amount: input.amount,
+      currency: input.currency,
+      email: input.email,
+      successUrl: `${returnBase}?status=return&ref=${input.paymentReference}`,
+      cancelUrl: `${returnBase}?status=cancelled`,
+    });
+    return { checkoutUrl };
+  }
+
   if (!input.phone) {
     throw new AppError('Phone number is required for M-Pesa STK push.', 400, 'PHONE_REQUIRED');
   }
@@ -165,7 +179,7 @@ export const paymentsService = {
         : undefined;
     let resolvedEmail: string | undefined;
 
-    if (input.gateway === 'mpesa' || input.gateway === 'paystack') {
+    if (input.gateway === 'mpesa' || input.gateway === 'paystack' || input.gateway === 'stripe') {
       const user = await User.findById(userId).select('phone email');
       if (!user) {
         throw new AppError('User not found.', 404, 'USER_NOT_FOUND');
